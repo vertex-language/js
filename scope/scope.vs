@@ -172,6 +172,22 @@ final class ScopeAnalyzer {
             }
             currentScope = prev
 
+        case .classDecl(let c):
+            let targetScope = currentScope
+            if targetScope.LookupLocal(c.Name) != nil {
+                throw ScopeError.error(message: "identifier '\(c.Name)' has already been declared", pos: c.Pos)
+            }
+            _ = targetScope.Declare(c.Name, kind: .letKind, pos: c.Pos)
+            if let sc = c.SuperClass {
+                try walkExpr(sc)
+            }
+            for el in c.Elements where el.Kind == .constructor {
+                try walkExpr(.function(el.Value))
+            }
+            for el in c.Elements where el.Kind != .constructor {
+                try walkExpr(.function(el.Value))
+            }
+
         case .ifStmt(let i):
             try walkExpr(i.Test)
             try walkStmt(i.Consequent)
@@ -349,6 +365,18 @@ final class ScopeAnalyzer {
             for ex in t.Expressions {
                 try walkExpr(ex)
             }
+        case .classExpr(let c):
+            if let sc = c.SuperClass {
+                try walkExpr(sc)
+            }
+            for el in c.Elements where el.Kind == .constructor {
+                try walkExpr(.function(el.Value))
+            }
+            for el in c.Elements where el.Kind != .constructor {
+                try walkExpr(.function(el.Value))
+            }
+        case .superExpr:
+            break
         case .number, .string, .boolean, .nullLit, .undefinedLit, .thisExpr:
             break
         }

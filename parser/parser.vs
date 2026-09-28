@@ -133,6 +133,9 @@ public final class Parser {
         if check(.kFunction) {
             return try parseFunctionDeclaration()
         }
+        if check(.kClass) {
+            return try parseClassDeclaration()
+        }
         if check(.kVar) || check(.kLet) || check(.kConst) {
             return try parseVariableStatement()
         }
@@ -147,6 +150,8 @@ public final class Parser {
             return .empty(ast.EmptyStmt(pos: pos))
         case .lBrace:
             return try parseBlockStatement()
+        case .kClass:
+            return try parseClassDeclaration()
         case .kIf:
             return try parseIfStatement()
         case .kWhile:
@@ -230,6 +235,131 @@ public final class Parser {
             throw error("expected function block body")
         }
         return .functionDecl(ast.FunctionDecl(name: name, params: params, body: body, isAsync: false, isGenerator: isGenerator, pos: pos))
+    }
+
+    func parseClassDeclaration() throws -> ast.Stmt {
+        let pos = current.Pos
+        try expect(.kClass)
+        let name = try parseBindingIdentifier()
+        var superClass: ast.Expr? = nil
+        if match(.kExtends) {
+            superClass = try parseLeftHandSideExpression()
+        }
+        let elements = try parseClassElements()
+        return .classDecl(ast.ClassDecl(name: name, superClass: superClass, elements: elements, pos: pos))
+    }
+
+    func parseClassExpression() throws -> ast.Expr {
+        let pos = current.Pos
+        try expect(.kClass)
+        var name: string? = nil
+        if current.Kind == .identifier || current.IsContextualKeyword {
+            name = current.Text
+            advance()
+        }
+        var superClass: ast.Expr? = nil
+        if match(.kExtends) {
+            superClass = try parseLeftHandSideExpression()
+        }
+        let elements = try parseClassElements()
+        return .classExpr(ast.ClassExpr(name: name, superClass: superClass, elements: elements, pos: pos))
+    }
+
+    func parseClassElements() throws -> [ast.ClassElement] {
+        try expect(.lBrace)
+        var elements: [ast.ClassElement] = []
+        while !check(.rBrace) && !check(.eof) {
+            if match(.semi) {
+                continue
+            }
+            let propPos = current.Pos
+            var isStatic = false
+            var isAsync = false
+            var isGenerator = false
+            var kind: ast.ClassElementKind = .method
+
+            if current.Kind == .kStatic {
+                let peekTok = sc.Peek()
+                if peekTok.Kind != .lParen && peekTok.Kind != .semi && peekTok.Kind != .assign {
+                    advance()
+                    isStatic = true
+                }
+            }
+
+            if current.Kind == .kAsync {
+                let peekTok = sc.Peek()
+                if peekTok.Kind != .lParen {
+                    advance()
+                    isAsync = true
+                }
+            }
+
+            if match(.mul) {
+                isGenerator = true
+            }
+
+            if current.Kind == .kGet {
+                let peekTok = sc.Peek()
+                if peekTok.Kind != .lParen {
+                    advance()
+                    kind = .get
+                }
+            } else if current.Kind == .kSet {
+                let peekTok = sc.Peek()
+                if peekTok.Kind != .lParen {
+                    advance()
+                    kind = .set
+                }
+            }
+
+            var computed = false
+            let keyExpr: ast.Expr
+
+            if match(.lBracket) {
+                computed = true
+                keyExpr = try parseAssignmentExpression()
+                try expect(.rBracket)
+            } else if current.IsIdentifierName {
+                let name = current.Text
+                if name == "constructor" && !isStatic {
+                    kind = .constructor
+                }
+                keyExpr = .identifier(ast.IdentifierExpr(name, pos: current.Pos))
+                advance()
+            } else if current.Kind == .string {
+                let s = parseString(current.Text)
+                if s == "constructor" && !isStatic {
+                    kind = .constructor
+                }
+                keyExpr = .string(ast.StringLiteralExpr(s, raw: current.Text, pos: current.Pos))
+                advance()
+            } else if current.Kind == .number {
+                let n = parseNumber(current.Text)
+                keyExpr = .number(ast.NumberLiteralExpr(n, raw: current.Text, pos: current.Pos))
+                advance()
+            } else {
+                throw error("expected method name in class body, got \(current.Kind) ('\(current.Text)')")
+            }
+
+            try expect(.lParen)
+            var params: [string] = []
+            if !check(.rParen) {
+                while true {
+                    params.append(try parseBindingIdentifier())
+                    if !match(.comma) { break }
+                }
+            }
+            try expect(.rParen)
+
+            guard case .block(let body) = try parseBlockStatement() else {
+                throw error("expected method block body")
+            }
+
+            let fnVal = ast.FunctionExpr(id: nil, params: params, body: body, isAsync: isAsync, isGenerator: isGenerator, pos: propPos)
+            elements.append(ast.ClassElement(Kind: kind, Key: keyExpr, Computed: computed, IsStatic: isStatic, Value: fnVal, Pos: propPos))
+        }
+        try expect(.rBrace)
+        return elements
     }
 
     func parseIfStatement() throws -> ast.Stmt {
@@ -726,6 +856,13 @@ public final class Parser {
             let content = raw.count >= 2 ? String(raw.dropFirst().dropLast()) : ""
             advance()
             return .template(ast.TemplateExpr(quasis: [content], expressions: [], pos: pos))
+
+        case .kClass:
+            return try parseClassExpression()
+
+        case .kSuper:
+            advance()
+            return .superExpr(ast.SuperExpr(pos: pos))
 
         default:
             throw error("unexpected token \(current.Kind) ('\(current.Text)')")

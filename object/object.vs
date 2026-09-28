@@ -307,9 +307,14 @@ public final class Realm {
     public func NewBytecodeFunction(_ code: bytecode.BytecodeFunction) -> JSObject {
         let fn = JSObject(prototype: FunctionPrototype)
         fn.Callable = .bytecode(code)
+        fn.IsConstructor = true
         fn.Set("name", value.Value.String(code.Name))
         fn.Set("length", value.Value.Int(int32(code.ParameterCount)))
-        return Heap.Allocate(fn, size: 64, typeTag: 10)
+        let proto = NewObject()
+        let fnObj = Heap.Allocate(fn, size: 64, typeTag: 10)
+        proto.Set("constructor", value.Value.Object(fnObj))
+        fnObj.Set("prototype", value.Value.Object(proto))
+        return fnObj
     }
 
     // Microtask queue & VM call hook

@@ -76,6 +76,7 @@ public enum Opcode: Equatable {
     case createObjectLiteral
     case createArrayLiteral
     case createClosure
+    case setProto
 }
 
 /// Instruction represents a single bytecode operation with register/immediate operands.
@@ -218,6 +219,7 @@ public func Disassemble(_ fn: BytecodeFunction) -> string {
         case .createObjectLiteral: out += "CreateObjectLiteral\n"
         case .createArrayLiteral: out += "CreateArrayLiteral [count \(instr.Imm)]\n"
         case .createClosure: out += "CreateClosure [const \(instr.Imm)]\n"
+        case .setProto: out += "SetProto r\(instr.R0)\n"
         }
     }
     return out

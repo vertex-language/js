@@ -421,7 +421,23 @@ public final class VM {
                 }
 
             case .testInstanceOf:
-                acc = value.Value.Boolean(false)
+                let rIdx = rBase + Int(instr.R0)
+                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
+                var result = false
+                if left.IsObject, let ctorObj = acc.ObjVal as? object.JSObject {
+                    let targetProto = ctorObj.Get("prototype")
+                    if targetProto.IsObject, let protoObj = targetProto.ObjVal as? object.JSObject {
+                        var cur = (left.ObjVal as? object.JSObject)?.Prototype
+                        while let p = cur {
+                            if p === protoObj {
+                                result = true
+                                break
+                            }
+                            cur = p.Prototype
+                        }
+                    }
+                }
+                acc = value.Value.Boolean(result)
 
             case .jump:
                 frame.pc = (frame.pc - 1) + Int(instr.Offset)
@@ -517,6 +533,16 @@ public final class VM {
                 if idx < constants.count, case .fnVal(let code) = constants[idx] {
                     let jsFn = realm.NewBytecodeFunction(code)
                     acc = value.Value.Object(jsFn)
+                }
+
+            case .setProto:
+                let rIdx = rBase + Int(instr.R0)
+                if rIdx < stack.count, let target = stack[rIdx].ObjVal as? object.JSObject {
+                    if acc.IsNull {
+                        target.Prototype = nil
+                    } else if let proto = acc.ObjVal as? object.JSObject {
+                        target.Prototype = proto
+                    }
                 }
             }
         }

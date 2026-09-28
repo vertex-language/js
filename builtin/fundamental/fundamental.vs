@@ -65,6 +65,47 @@ public func Register(into realm: object.Realm) {
     }
     objectCtor.Set("assign", value.Value.Object(assignFn))
 
+    // Object.create
+    let createFn = realm.NewFunction(name: "create") { r, _, args in
+        if args.isEmpty { return value.Value.Object(r.NewObject()) }
+        let protoVal = args[0]
+        if protoVal.IsNull {
+            let obj = r.NewObject(prototype: nil)
+            return value.Value.Object(obj)
+        }
+        if let protoObj = protoVal.ObjVal as? object.JSObject {
+            let obj = r.NewObject(prototype: protoObj)
+            return value.Value.Object(obj)
+        }
+        return value.Value.Object(r.NewObject())
+    }
+    objectCtor.Set("create", value.Value.Object(createFn))
+
+    // Object.setPrototypeOf
+    let setProtoFn = realm.NewFunction(name: "setPrototypeOf") { _, _, args in
+        if args.count < 2 { return args.isEmpty ? value.Value.Undefined : args[0] }
+        let target = args[0]
+        let proto = args[1]
+        guard let obj = target.ObjVal as? object.JSObject else { return target }
+        if proto.IsNull {
+            obj.Prototype = nil
+        } else if let p = proto.ObjVal as? object.JSObject {
+            obj.Prototype = p
+        }
+        return target
+    }
+    objectCtor.Set("setPrototypeOf", value.Value.Object(setProtoFn))
+
+    // Object.getPrototypeOf
+    let getProtoFn = realm.NewFunction(name: "getPrototypeOf") { _, _, args in
+        if args.isEmpty || !args[0].IsObject { return value.Value.Undefined }
+        if let obj = args[0].ObjVal as? object.JSObject, let p = obj.Prototype {
+            return value.Value.Object(p)
+        }
+        return value.Value.Null
+    }
+    objectCtor.Set("getPrototypeOf", value.Value.Object(getProtoFn))
+
     g.Set("Object", value.Value.Object(objectCtor))
 
     // Object.prototype.toString

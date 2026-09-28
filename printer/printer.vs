@@ -289,6 +289,40 @@ struct Printer {
                 output += "}"
             }
             output += "\n"
+
+        case .classDecl(let c):
+            indent()
+            output += "class \(c.Name)"
+            if let sc = c.SuperClass {
+                output += " extends "
+                printExpr(sc)
+            }
+            output += " {\n"
+            indentLevel += 1
+            for el in c.Elements {
+                indent()
+                if el.IsStatic { output += "static " }
+                if el.Kind == .get { output += "get " }
+                else if el.Kind == .set { output += "set " }
+                if el.Computed {
+                    output += "["
+                    printExpr(el.Key)
+                    output += "]"
+                } else {
+                    printExpr(el.Key)
+                }
+                output += "(\(el.Value.Params.joined(separator: ", "))) {\n"
+                indentLevel += 1
+                for s in el.Value.Body.Statements {
+                    printStmt(s)
+                }
+                indentLevel -= 1
+                indent()
+                output += "}\n"
+            }
+            indentLevel -= 1
+            indent()
+            output += "}\n"
         }
     }
 
@@ -467,6 +501,43 @@ struct Printer {
                 output += q
             }
             output += "`"
+
+        case .classExpr(let c):
+            output += "class"
+            if let n = c.Name { output += " \(n)" }
+            if let sc = c.SuperClass {
+                output += " extends "
+                printExpr(sc)
+            }
+            output += " {\n"
+            indentLevel += 1
+            for el in c.Elements {
+                indent()
+                if el.IsStatic { output += "static " }
+                if el.Kind == .get { output += "get " }
+                else if el.Kind == .set { output += "set " }
+                if el.Computed {
+                    output += "["
+                    printExpr(el.Key)
+                    output += "]"
+                } else {
+                    printExpr(el.Key)
+                }
+                output += "(\(el.Value.Params.joined(separator: ", "))) {\n"
+                indentLevel += 1
+                for s in el.Value.Body.Statements {
+                    printStmt(s)
+                }
+                indentLevel -= 1
+                indent()
+                output += "}\n"
+            }
+            indentLevel -= 1
+            indent()
+            output += "}"
+
+        case .superExpr:
+            output += "super"
         }
     }
 

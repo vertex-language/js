@@ -28,6 +28,8 @@ final class Compiler {
     var maxRegisters: int32 = 0
     var loopStack: [LoopTarget] = []
     var childScopeIndex: int = 0
+    var currentSuperExpr: ast.Expr? = nil
+    var isStaticMethod: bool = false
 
     init(currentScope: scope.Scope, name: string = "") {
         self.fn = bytecode.BytecodeFunction(name: name)
@@ -116,6 +118,10 @@ final class Compiler {
             for d in v.Declarations {
                 if let initExpr = d.Init {
                     try compileExpr(initExpr)
+                    if currentScope.Kind == .global {
+                        let constIdx = addStringConstant(d.Id)
+                        _ = emit(bytecode.Instruction(op: .staGlobal, imm: constIdx))
+                    }
                     if let binding = currentScope.LookupInCurrentFunction(d.Id) {
                         let reg = int32(binding.Slot)
                         _ = emit(bytecode.Instruction(op: .star, r0: reg))
@@ -299,6 +305,9 @@ final class Compiler {
                 try compileStmt(.block(f))
             }
 
+        case .classDecl(let c):
+            try compileClass(name: c.Name, superClass: c.SuperClass, elements: c.Elements, isExpr: false)
+
         case .forInStmt, .forOfStmt:
             break
         }
@@ -444,6 +453,10 @@ final class Compiler {
             if a.Op == .assign {
                 try compileExpr(a.Right)
                 if case .identifier(let id) = a.Left {
+                    if currentScope.Kind == .global {
+                        let constIdx = addStringConstant(id.Name)
+                        _ = emit(bytecode.Instruction(op: .staGlobal, imm: constIdx))
+                    }
                     if let b = currentScope.LookupInCurrentFunction(id.Name) {
                         let reg = int32(b.Slot)
                         _ = emit(bytecode.Instruction(op: .star, r0: reg))
@@ -517,6 +530,27 @@ final class Compiler {
             }
 
         case .member(let m):
+            if case .superExpr = m.Object {
+                if let sup = currentSuperExpr {
+                    let targetReg = allocateRegister()
+                    try compileExpr(sup)
+                    _ = emit(bytecode.Instruction(op: .star, r0: targetReg))
+                    if !isStaticMethod {
+                        let protoConst = addStringConstant("prototype")
+                        _ = emit(bytecode.Instruction(op: .ldaNamedProperty, r0: targetReg, imm: protoConst))
+                        _ = emit(bytecode.Instruction(op: .star, r0: targetReg))
+                    }
+                    if m.Computed {
+                        try compileExpr(m.Property)
+                        _ = emit(bytecode.Instruction(op: .ldaKeyedProperty, r0: targetReg))
+                    } else if case .identifier(let propId) = m.Property {
+                        let constIdx = addStringConstant(propId.Name)
+                        _ = emit(bytecode.Instruction(op: .ldaNamedProperty, r0: targetReg, imm: constIdx))
+                    }
+                    freeRegister(targetReg)
+                    return
+                }
+            }
             try compileExpr(m.Object)
             let objReg = allocateRegister()
             _ = emit(bytecode.Instruction(op: .star, r0: objReg))
@@ -530,6 +564,74 @@ final class Compiler {
             freeRegister(objReg)
 
         case .call(let c):
+            if case .superExpr = c.Callee {
+                if let sup = currentSuperExpr {
+                    let calleeReg = allocateRegister()
+                    let receiverReg = allocateRegister()
+                    try compileExpr(sup)
+                    _ = emit(bytecode.Instruction(op: .star, r0: calleeReg))
+                    _ = emit(bytecode.Instruction(op: .ldar, r0: 0)) // r0 is receiver 'this'
+                    _ = emit(bytecode.Instruction(op: .star, r0: receiverReg))
+                    var argRegs: [int32] = []
+                    for arg in c.Arguments {
+                        try compileExpr(arg)
+                        let aReg = allocateRegister()
+                        _ = emit(bytecode.Instruction(op: .star, r0: aReg))
+                        argRegs.append(aReg)
+                    }
+                    let firstArg = argRegs.isEmpty ? 0 : argRegs[0]
+                    _ = emit(bytecode.Instruction(op: .call, r0: calleeReg, r1: receiverReg, r2: firstArg, imm: int32(argRegs.count)))
+                    for ar in argRegs.reversed() {
+                        freeRegister(ar)
+                    }
+                    freeRegister(receiverReg)
+                    freeRegister(calleeReg)
+                    return
+                }
+            }
+            if case .member(let m) = c.Callee, case .superExpr = m.Object {
+                if let sup = currentSuperExpr {
+                    let calleeReg = allocateRegister()
+                    let receiverReg = allocateRegister()
+                    let targetReg = allocateRegister()
+                    try compileExpr(sup)
+                    _ = emit(bytecode.Instruction(op: .star, r0: targetReg))
+                    if !isStaticMethod {
+                        let protoConst = addStringConstant("prototype")
+                        _ = emit(bytecode.Instruction(op: .ldaNamedProperty, r0: targetReg, imm: protoConst))
+                        _ = emit(bytecode.Instruction(op: .star, r0: targetReg))
+                    }
+                    if m.Computed {
+                        try compileExpr(m.Property)
+                        _ = emit(bytecode.Instruction(op: .ldaKeyedProperty, r0: targetReg))
+                    } else if case .identifier(let propId) = m.Property {
+                        let constIdx = addStringConstant(propId.Name)
+                        _ = emit(bytecode.Instruction(op: .ldaNamedProperty, r0: targetReg, imm: constIdx))
+                    }
+                    _ = emit(bytecode.Instruction(op: .star, r0: calleeReg))
+                    freeRegister(targetReg)
+
+                    _ = emit(bytecode.Instruction(op: .ldar, r0: 0)) // receiver 'this'
+                    _ = emit(bytecode.Instruction(op: .star, r0: receiverReg))
+
+                    var argRegs: [int32] = []
+                    for arg in c.Arguments {
+                        try compileExpr(arg)
+                        let aReg = allocateRegister()
+                        _ = emit(bytecode.Instruction(op: .star, r0: aReg))
+                        argRegs.append(aReg)
+                    }
+                    let firstArg = argRegs.isEmpty ? 0 : argRegs[0]
+                    _ = emit(bytecode.Instruction(op: .call, r0: calleeReg, r1: receiverReg, r2: firstArg, imm: int32(argRegs.count)))
+                    for ar in argRegs.reversed() {
+                        freeRegister(ar)
+                    }
+                    freeRegister(receiverReg)
+                    freeRegister(calleeReg)
+                    return
+                }
+            }
+
             let calleeReg = allocateRegister()
             let receiverReg = allocateRegister()
 
@@ -689,6 +791,165 @@ final class Compiler {
             }
             freeRegister(receiverReg)
             freeRegister(calleeReg)
+
+        case .classExpr(let c):
+            try compileClass(name: c.Name, superClass: c.SuperClass, elements: c.Elements, isExpr: true)
+
+        case .superExpr:
+            _ = emit(bytecode.Instruction(op: .ldaUndefined))
+        }
+    }
+
+    func compileClass(name: string?, superClass: ast.Expr?, elements: [ast.ClassElement], isExpr: bool) throws {
+        var superExpr: ast.Expr? = nil
+        var superReg: int32? = nil
+        if let sc = superClass {
+            superExpr = sc
+            try compileExpr(sc)
+            let sReg = allocateRegister()
+            _ = emit(bytecode.Instruction(op: .star, r0: sReg))
+            superReg = sReg
+        }
+
+        // Find constructor
+        var ctorElement: ast.ClassElement? = nil
+        for el in elements {
+            if el.Kind == .constructor {
+                ctorElement = el
+                break
+            }
+        }
+
+        let ctorParams: [string]
+        let ctorBody: ast.BlockStmt
+        if let el = ctorElement {
+            ctorParams = el.Value.Params
+            ctorBody = el.Value.Body
+        } else {
+            ctorParams = []
+            if superExpr != nil {
+                ctorBody = ast.BlockStmt(statements: [
+                    ast.Stmt.expr(ast.ExprStmt(ast.Expr.call(ast.CallExpr(callee: .superExpr(ast.SuperExpr()), arguments: []))))
+                ])
+            } else {
+                ctorBody = ast.BlockStmt(statements: [])
+            }
+        }
+
+        let ctorScope: scope.Scope
+        if ctorElement != nil && childScopeIndex < currentScope.Children.count {
+            ctorScope = currentScope.Children[childScopeIndex]
+            childScopeIndex += 1
+        } else {
+            ctorScope = scope.Scope(kind: .function, parent: currentScope)
+        }
+
+        let ctorCompiler = Compiler(currentScope: ctorScope, name: name ?? "")
+        ctorCompiler.currentSuperExpr = superExpr
+        ctorCompiler.isStaticMethod = false
+        ctorCompiler.fn.ParameterCount = ctorParams.count
+        for s in ctorBody.Statements {
+            try ctorCompiler.compileStmt(s)
+        }
+        _ = ctorCompiler.emit(bytecode.Instruction(op: .ldaUndefined))
+        _ = ctorCompiler.emit(bytecode.Instruction(op: .returnOp))
+        ctorCompiler.fn.RegisterCount = Int(ctorCompiler.maxRegisters)
+
+        let ctorConst = fn.AddConstant(.fnVal(ctorCompiler.fn))
+        _ = emit(bytecode.Instruction(op: .createClosure, imm: ctorConst))
+        let ctorReg = allocateRegister()
+        _ = emit(bytecode.Instruction(op: .star, r0: ctorReg))
+
+        let protoConst = addStringConstant("prototype")
+
+        // Get Sub.prototype into subProtoReg
+        _ = emit(bytecode.Instruction(op: .ldaNamedProperty, r0: ctorReg, imm: protoConst))
+        let subProtoReg = allocateRegister()
+        _ = emit(bytecode.Instruction(op: .star, r0: subProtoReg))
+
+        if let sReg = superReg {
+            // Set Sub.__proto__ = Super
+            _ = emit(bytecode.Instruction(op: .ldar, r0: sReg))
+            _ = emit(bytecode.Instruction(op: .setProto, r0: ctorReg))
+
+            // Set Sub.prototype.__proto__ = Super.prototype
+            _ = emit(bytecode.Instruction(op: .ldaNamedProperty, r0: sReg, imm: protoConst))
+            _ = emit(bytecode.Instruction(op: .setProto, r0: subProtoReg))
+        }
+
+        // Attach methods
+        for el in elements {
+            if el.Kind == .constructor { continue }
+
+            let mScope: scope.Scope
+            if childScopeIndex < currentScope.Children.count {
+                mScope = currentScope.Children[childScopeIndex]
+                childScopeIndex += 1
+            } else {
+                mScope = scope.Scope(kind: .function, parent: currentScope)
+            }
+
+            var methodName = ""
+            if case .identifier(let id) = el.Key {
+                methodName = id.Name
+            } else if case .string(let s) = el.Key {
+                methodName = s.Value
+            }
+
+            let mCompiler = Compiler(currentScope: mScope, name: methodName)
+            mCompiler.currentSuperExpr = superExpr
+            mCompiler.isStaticMethod = el.IsStatic
+            mCompiler.fn.ParameterCount = el.Value.Params.count
+            for s in el.Value.Body.Statements {
+                try mCompiler.compileStmt(s)
+            }
+            _ = mCompiler.emit(bytecode.Instruction(op: .ldaUndefined))
+            _ = mCompiler.emit(bytecode.Instruction(op: .returnOp))
+            mCompiler.fn.RegisterCount = Int(mCompiler.maxRegisters)
+
+            let mConst = fn.AddConstant(.fnVal(mCompiler.fn))
+            _ = emit(bytecode.Instruction(op: .createClosure, imm: mConst))
+
+            let targetReg = el.IsStatic ? ctorReg : subProtoReg
+
+            if el.Computed {
+                let mReg = allocateRegister()
+                _ = emit(bytecode.Instruction(op: .star, r0: mReg))
+                try compileExpr(el.Key)
+                let keyReg = allocateRegister()
+                _ = emit(bytecode.Instruction(op: .star, r0: keyReg))
+                _ = emit(bytecode.Instruction(op: .ldar, r0: mReg))
+                _ = emit(bytecode.Instruction(op: .staKeyedProperty, r0: targetReg, r1: keyReg))
+                freeRegister(keyReg)
+                freeRegister(mReg)
+            } else if !methodName.isEmpty {
+                let keyConst = addStringConstant(methodName)
+                _ = emit(bytecode.Instruction(op: .staNamedProperty, r0: targetReg, imm: keyConst))
+            }
+        }
+
+        freeRegister(subProtoReg)
+        if let sReg = superReg {
+            freeRegister(sReg)
+        }
+
+        if let className = name, !isExpr {
+            _ = emit(bytecode.Instruction(op: .ldar, r0: ctorReg))
+            if currentScope.Kind == .global {
+                let constIdx = addStringConstant(className)
+                _ = emit(bytecode.Instruction(op: .staGlobal, imm: constIdx))
+            }
+            if let b = currentScope.LookupInCurrentFunction(className) {
+                let reg = int32(b.Slot)
+                _ = emit(bytecode.Instruction(op: .star, r0: reg))
+            } else {
+                let constIdx = addStringConstant(className)
+                _ = emit(bytecode.Instruction(op: .staGlobal, imm: constIdx))
+            }
+            freeRegister(ctorReg)
+        } else {
+            _ = emit(bytecode.Instruction(op: .ldar, r0: ctorReg))
+            freeRegister(ctorReg)
         }
     }
 }

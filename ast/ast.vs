@@ -283,6 +283,71 @@ public final class TemplateExpr {
     }
 }
 
+/// ClassElementKind distinguishes class methods, getters, setters, and constructors.
+public enum ClassElementKind: Equatable {
+    case constructor
+    case method
+    case get
+    case set
+}
+
+/// ClassElement represents a method, getter, setter, or constructor in a class body.
+public final class ClassElement {
+    public var Kind: ClassElementKind
+    public var Key: Expr
+    public var Computed: bool
+    public var IsStatic: bool
+    public var Value: FunctionExpr
+    public var Pos: int
+
+    public init(Kind: ClassElementKind, Key: Expr, Computed: bool = false, IsStatic: bool = false, Value: FunctionExpr, Pos: int = 0) {
+        self.Kind = Kind
+        self.Key = Key
+        self.Computed = Computed
+        self.IsStatic = IsStatic
+        self.Value = Value
+        self.Pos = Pos
+    }
+}
+
+/// SuperExpr represents a 'super' reference.
+public final class SuperExpr {
+    public var Pos: int
+    public init(pos: int = 0) {
+        self.Pos = pos
+    }
+}
+
+/// ClassExpr represents a class expression.
+public final class ClassExpr {
+    public var Name: string?
+    public var SuperClass: Expr?
+    public var Elements: [ClassElement]
+    public var Pos: int
+
+    public init(name: string? = nil, superClass: Expr? = nil, elements: [ClassElement] = [], pos: int = 0) {
+        self.Name = name
+        self.SuperClass = superClass
+        self.Elements = elements
+        self.Pos = pos
+    }
+}
+
+/// ClassDecl represents a class declaration statement.
+public final class ClassDecl {
+    public var Name: string
+    public var SuperClass: Expr?
+    public var Elements: [ClassElement]
+    public var Pos: int
+
+    public init(name: string, superClass: Expr? = nil, elements: [ClassElement] = [], pos: int = 0) {
+        self.Name = name
+        self.SuperClass = superClass
+        self.Elements = elements
+        self.Pos = pos
+    }
+}
+
 /// Expr wraps all expression variations.
 public enum Expr {
     case identifier(IdentifierExpr)
@@ -306,6 +371,8 @@ public enum Expr {
     case arrow(ArrowExpr)
     case sequence(SequenceExpr)
     case template(TemplateExpr)
+    case classExpr(ClassExpr)
+    case superExpr(SuperExpr)
 }
 
 // MARK: - Statement Nodes
@@ -525,6 +592,7 @@ public enum Stmt {
     case tryStmt(TryStmt)
     case varDecl(VarDecl)
     case functionDecl(FunctionDecl)
+    case classDecl(ClassDecl)
     case empty(EmptyStmt)
 }
 

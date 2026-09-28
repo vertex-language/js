@@ -125,4 +125,85 @@ public func Register(into realm: object.Realm) {
         return value.Value.Undefined
     }
     g.Set("gc", value.Value.Object(gcFn))
+
+    // Active timers manager
+    final class TimerManager {
+        var nextId: int32 = 1
+        var cancelled: [int32: bool] = [:]
+    }
+    let manager = TimerManager()
+
+    // setTimeout(callback, delay, ...args)
+    let setTimeoutFn = realm.NewFunction(name: "setTimeout") { r, _, args in
+        if args.isEmpty { return value.Value.Int(0) }
+        guard let cbObj = args[0].ObjVal as? object.JSObject, cbObj.Callable != nil else {
+            return value.Value.Int(0)
+        }
+        let timerId = manager.nextId
+        manager.nextId += 1
+
+        var cbArgs: [value.Value] = []
+        if args.count > 2 {
+            for i in 2..<args.count {
+                cbArgs.append(args[i])
+            }
+        }
+
+        r.EnqueueJob {
+            if manager.cancelled[timerId] == true {
+                return
+            }
+            _ = try? r.Call(cbObj, args: cbArgs)
+        }
+
+        return value.Value.Int(timerId)
+    }
+    g.Set("setTimeout", value.Value.Object(setTimeoutFn))
+
+    // clearTimeout(id)
+    let clearTimeoutFn = realm.NewFunction(name: "clearTimeout") { _, _, args in
+        if !args.isEmpty {
+            let id = args[0].ToInt32()
+            manager.cancelled[id] = true
+        }
+        return value.Value.Undefined
+    }
+    g.Set("clearTimeout", value.Value.Object(clearTimeoutFn))
+
+    // setInterval(callback, delay, ...args)
+    let setIntervalFn = realm.NewFunction(name: "setInterval") { r, _, args in
+        if args.isEmpty { return value.Value.Int(0) }
+        guard let cbObj = args[0].ObjVal as? object.JSObject, cbObj.Callable != nil else {
+            return value.Value.Int(0)
+        }
+        let timerId = manager.nextId
+        manager.nextId += 1
+
+        var cbArgs: [value.Value] = []
+        if args.count > 2 {
+            for i in 2..<args.count {
+                cbArgs.append(args[i])
+            }
+        }
+
+        r.EnqueueJob {
+            if manager.cancelled[timerId] == true {
+                return
+            }
+            _ = try? r.Call(cbObj, args: cbArgs)
+        }
+
+        return value.Value.Int(timerId)
+    }
+    g.Set("setInterval", value.Value.Object(setIntervalFn))
+
+    // clearInterval(id)
+    let clearIntervalFn = realm.NewFunction(name: "clearInterval") { _, _, args in
+        if !args.isEmpty {
+            let id = args[0].ToInt32()
+            manager.cancelled[id] = true
+        }
+        return value.Value.Undefined
+    }
+    g.Set("clearInterval", value.Value.Object(clearIntervalFn))
 }

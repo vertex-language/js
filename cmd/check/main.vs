@@ -616,6 +616,132 @@ func testBinaryDataAndTypedArrays() {
     } catch {
         check(false, "isView error: \(error)")
     }
+
+    // 13.1 Class declaration and instantiation (§15)
+    do {
+        let script = """
+        class Person {
+            constructor(name) {
+                this.name = name;
+            }
+            greet() {
+                return "Hello " + this.name;
+            }
+        }
+        let p = new Person("Ada");
+        (p.greet() === "Hello Ada") && (p instanceof Person);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "class: declaration, constructor, methods, and instanceof pass")
+    } catch {
+        check(false, "class declaration error: \(error)")
+    }
+
+    // 13.2 Class inheritance, super constructor, super method calls (§15)
+    do {
+        let script = """
+        class Animal {
+            constructor(name) {
+                this.name = name;
+            }
+            sound() {
+                return "Sound";
+            }
+        }
+        class Cat extends Animal {
+            constructor(name, lives) {
+                super(name);
+                this.lives = lives;
+            }
+            sound() {
+                return super.sound() + "->Meow";
+            }
+        }
+        let c = new Cat("Whiskers", 9);
+        (c.name === "Whiskers") && (c.lives === 9) && (c.sound() === "Sound->Meow") && (c instanceof Cat) && (c instanceof Animal) && (c instanceof Object);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "class: inheritance, super(), super.method(), and prototype chain pass")
+    } catch {
+        check(false, "class inheritance error: \(error)")
+    }
+
+    // 13.3 Static methods and static inheritance
+    do {
+        let script = """
+        class BaseMath {
+            static add(a, b) {
+                return a + b;
+            }
+        }
+        class SubMath extends BaseMath {
+            static mul(a, b) {
+                return a * b;
+            }
+        }
+        (BaseMath.add(10, 20) === 30) && (SubMath.mul(3, 4) === 12) && (SubMath.add(5, 7) === 12);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "class: static methods and static inheritance pass")
+    } catch {
+        check(false, "class static error: \(error)")
+    }
+
+    // 13.4 Class expressions
+    do {
+        let script = """
+        let Anon = class {
+            constructor(val) {
+                this.val = val;
+            }
+            calc() {
+                return this.val * 3;
+            }
+        };
+        let a = new Anon(14);
+        (a.calc() === 42) && (a instanceof Anon);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "class: class expressions and anonymous classes pass")
+    } catch {
+        check(false, "class expression error: \(error)")
+    }
+
+    // 13.5 Object.create and Object.setPrototypeOf / getPrototypeOf
+    do {
+        let script = """
+        let proto = { x: 100 };
+        let obj = Object.create(proto);
+        let sameProto = (Object.getPrototypeOf(obj) === proto);
+        let newProto = { y: 200 };
+        Object.setPrototypeOf(obj, newProto);
+        sameProto && (obj.y === 200) && (Object.getPrototypeOf(obj) === newProto);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "object: Object.create, setPrototypeOf, getPrototypeOf pass")
+    } catch {
+        check(false, "Object prototype helpers error: \(error)")
+    }
+
+    // 13.6 Timers: setTimeout and clearTimeout
+    do {
+        _ = try realm.Eval("""
+        var timerFired = 0;
+        var cancelledFired = 0;
+        setTimeout(function() {
+            timerFired = 42;
+        }, 10);
+        let cancelId = setTimeout(function() {
+            cancelledFired = 1;
+        }, 10);
+        clearTimeout(cancelId);
+        """)
+        realm.RunJobs()
+        let res = try realm.Eval("(timerFired === 42) && (cancelledFired === 0);")
+        check(res.ToBoolean(), "timer: setTimeout schedules job and clearTimeout cancels job")
+    } catch {
+        check(false, "timer error: \(error)")
+    }
 }
 
 

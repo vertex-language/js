@@ -25,6 +25,16 @@ public final class Scanner {
         return hasPrecedingLineBreak
     }
 
+    /// Peek returns the next token without advancing the scanner offset.
+    public func Peek() -> token.Token {
+        let savedOffset = offset
+        let savedBreak = hasPrecedingLineBreak
+        let tok = Next()
+        offset = savedOffset
+        hasPrecedingLineBreak = savedBreak
+        return tok
+    }
+
     /// Next returns the next token from the input.
     public func Next() -> token.Token {
         hasPrecedingLineBreak = false

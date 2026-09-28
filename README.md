@@ -25,9 +25,9 @@ The engine has no C/C++ runtime dependencies, no Cgo, and compiles directly with
 | **§6–§9: Types & Conversions** | Values, primitives, records, `ToBoolean`, `ToInt32`, `ToNumber`, `ToString` | **Complete** | Tagged unboxed `Value` representation, NaN/overflow wrapping, abstract (`==`) and strict (`===`) equality. |
 | **§10–§11: Source & Lexer** | UTF-8 scanning, keywords, literals, template strings, ASI | **Complete** | Full lexer in `js/scanner`, decimal/hex/binary/octal/float literals, ASI tracking, comment preservation. |
 | **§12–§14: Statements & Syntax** | AST, expressions, precedence, declarations (`var`, `let`, `const`), loops, control flow | **Complete** | Recursive descent parser in `js/parser`, lexical environments & TDZ in `js/scope`, AST formatting in `js/printer`. |
-| **§15: Functions & Classes** | Functions, closures, recursion, constructors, `class`, `extends`, `super` | **Partial** | Full function expressions, declarations, closures, and constructor calls (`new Ctor`). `class` syntax, `super`, and private fields (`#field`) scheduled for Phase 2. |
+| **§15: Functions & Classes** | Functions, closures, recursion, constructors, `class`, `extends`, `super` | **Complete** | Full function expressions, declarations, closures, constructor calls (`new Ctor`). ES6 `class` declarations and expressions, `extends` inheritance, `super()` constructor delegation, `super.method()` prototype invocation, and `static` methods. |
 | **§16: Modules** | Static module records, imports, exports | **Built** | `SourceTextModuleRecord`, `ImportEntry`, `ExportEntry` structures in `js/module`. |
-| **§19: Global Object** | `globalThis`, `isFinite`, `isNaN`, `parseInt`, `parseFloat`, `gc()` | **Complete** | Standard global functions, `globalThis` self-referential linkage, diagnostic garbage collector trigger. |
+| **§19: Global Object** | `globalThis`, `isFinite`, `isNaN`, `parseInt`, `parseFloat`, `gc()`, timers | **Complete** | Standard global functions, `globalThis` linkage, `setTimeout`/`clearTimeout`/`setInterval`/`clearInterval` task timers, diagnostic GC trigger. |
 | **§20: Fundamental Objects** | `Object`, `Function`, `Boolean`, `Error`, `TypeError`, `RangeError`, `SyntaxError` | **Complete** | Prototypes, shape transition trees (`js/object`), `Object.keys`, `Object.getPrototypeOf`, `Function.prototype.call`. |
 | **§21: Numbers & Math** | `Number`, `Math` (`abs`, `floor`, `ceil`, `round`, `min`, `max`, `sqrt`) | **Complete** | Full IEEE-754 double operations in `js/builtin/numeric`. (`Date` pending `time` package integration). |
 | **§22: Text Processing** | `String` methods, `RegExp` pattern AST, regex backtracking engine | **Complete** | UTF-16 Latin-1/2-byte `JSString` ropes and atoms, regex matcher supporting flags `g`, `i`, `m`, `s`, `u`, `y`. |
@@ -103,7 +103,7 @@ You can run any tool or example directly using the `vsc` CLI:
 # 1. Run the end-to-end embedding example
 vsc run example
 
-# 2. Run the comprehensive regression test suite (52/52 tests)
+# 2. Run the comprehensive regression test suite (65/65 tests)
 vsc run check
 
 # 3. Verify architectural layering rules across all 22 packages
@@ -357,6 +357,66 @@ func main() -> int32 {
 }
 ```
 
+### 7. ES6 Classes & Timers (§15 & §19)
+
+Define modern ECMAScript class hierarchies with constructor delegation, prototype method inheritance, and scheduled task timers:
+
+```swift
+package main
+
+import "js"
+
+func main() -> int32 {
+    let realm = js.Realm()
+
+    let script = """
+    class Widget {
+        constructor(title) {
+            this.title = title;
+        }
+        render() {
+            return "<widget:" + this.title + ">";
+        }
+        static version() {
+            return "2026.1";
+        }
+    }
+
+    class Button extends Widget {
+        constructor(title, action) {
+            super(title);
+            this.action = action;
+        }
+        render() {
+            return super.render() + " -> [Button:" + this.action + "]";
+        }
+    }
+
+    let btn = new Button("Submit", "onClick");
+    let isWidget = (btn instanceof Widget);
+    let output = btn.render();
+    let ver = Button.version(); // static method inheritance
+
+    // Schedule delayed task via global timer
+    var fired = false;
+    let tid = setTimeout(function() {
+        fired = true;
+    }, 10);
+
+    JSON.stringify({
+        isWidget: isWidget,
+        output: output,
+        version: ver
+    });
+    """
+
+    let res = try! realm.Eval(script)
+    print("Class result: " + res.ToString())
+    // Output: Class result: {"isWidget":true,"output":"<widget:Submit> -> [Button:onClick]","version":"2026.1"}
+    return 0
+}
+```
+
 ---
 
 ## Architecture Layering Rules
@@ -385,7 +445,7 @@ vsc run repl
 ```
 
 ### Verification & Tests (`cmd/check`)
-Run the 45-point test harness verifying lexer tokens, AST nodes, scope analysis, shapes, strings, regex, VM evaluation, GC cycles, and memory primitives:
+Run the 65-point test harness verifying lexer tokens, AST nodes, scope analysis, shapes, strings, regex, VM evaluation, GC cycles, ES6 classes, and memory primitives:
 ```bash
 vsc run check
 ```
