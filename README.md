@@ -2,7 +2,7 @@
 
 [![package: vs-package](https://img.shields.io/badge/package-vs--package-f4f4f5?style=flat-square&labelColor=e4e4e7&color=18181b)](https://github.com/vertex-language)
 [![js: ecmascript-engine](https://img.shields.io/badge/js-ecmascript--engine-f4f4f5?style=flat-square&labelColor=e4e4e7&color=18181b)](https://github.com/vertex-language/js)
-[![tests: 45/45 passing](https://img.shields.io/badge/tests-45%2F45%20passing-10b981?style=flat-square&labelColor=e4e4e7)](https://github.com/vertex-language/js)
+[![tests: 52/52 passing](https://img.shields.io/badge/tests-52%2F52%20passing-10b981?style=flat-square&labelColor=e4e4e7)](https://github.com/vertex-language/js)
 
 A modern ECMAScript standard engine written in pure Vertex.
 
@@ -35,7 +35,7 @@ The engine has no C/C++ runtime dependencies, no Cgo, and compiles directly with
 | **§24: Keyed Collections** | `Map`, `Set`, `WeakMap`, `WeakSet` | **Complete** | Full hash-based `Map` and `Set`. `WeakMap` and `WeakSet` backed by GC ephemeron tables (`gc.Heap.Ephemerons`). |
 | **§25: Structured Data** | `JSON.stringify`, `JSON.parse`, `ArrayBuffer`, `DataView`, `TypedArray` family | **Partial** | `JSON` serialization and parsing complete. `ArrayBuffer`, `DataView`, and typed arrays scheduled next for Phase 2. |
 | **§26: Managing Memory** | `WeakRef`, `FinalizationRegistry`, Traced Heap, Write Barriers, Ephemerons | **Complete** | `JSObject` inherits from `gc.Cell`. Exact tracing, write barriers, root providers, weak references, cleanup callbacks. |
-| **§27: Control Abstraction** | Microtask queue, `Promise` (`then`, `catch`, `finally`, combinators), `async / await` | **In Progress** | `Agent` microtask queue operational. `Promise` constructor, reactions, and combinators scheduled next for Phase 2. |
+| **§27: Control Abstraction** | Microtask queue, `Promise` (`then`, `catch`, `finally`, combinators), `queueMicrotask` | **Complete** | `Promise` constructor, thenable unwrapping, microtask reactions, combinators (`all`, `race`, `allSettled`, `any`), `queueMicrotask`. |
 | **§28: Reflection** | `Reflect` namespace and `Proxy` with 13 internal traps | **Planned** | Dynamic interception traps scheduled for Phase 3. |
 | **ECMA-402: Internationalization**| `Intl.DateTimeFormat`, `Intl.NumberFormat`, `Intl.Collator` | **Planned** | Standalone `intl` package with CLDR tables. |
 
@@ -87,6 +87,7 @@ Source Code
 | | `js/builtin/indexed` | `Array` constructor, `isArray`, `push`, `pop`, `shift`, `unshift`, `join`, `slice`, `indexOf`. |
 | | `js/builtin/keyed` | `Map`, `Set`, `WeakMap`, `WeakSet` (ephemeron pairs registered in `gc.Heap`). |
 | | `js/builtin/memory` | `WeakRef` and `FinalizationRegistry` (resource cleanup notifications via `gc.Heap`). |
+| | `js/builtin/control` | `Promise` constructor, reactions (`then`, `catch`, `finally`), combinators (`all`, `race`, `allSettled`, `any`), `queueMicrotask`. |
 | | `js/builtin/structured` | `JSON.stringify` (with deterministic slot-order keys) and `JSON.parse`. |
 | **RegExp** | `js/regexp/syntax` | ECMAScript RegExp flags (`g`, `i`, `m`, `s`, `u`, `y`) and pattern AST. |
 | | `js/regexp` | Backtracking regex matcher engine with execution step budgeting. |
@@ -102,10 +103,10 @@ You can run any tool or example directly using the `vsc` CLI:
 # 1. Run the end-to-end embedding example
 vsc run example
 
-# 2. Run the comprehensive regression test suite (45/45 tests)
+# 2. Run the comprehensive regression test suite (52/52 tests)
 vsc run check
 
-# 3. Verify architectural layering rules across all 20 packages
+# 3. Verify architectural layering rules across all 22 packages
 vsc run check-deps
 
 # 4. Disassemble sample JavaScript into bytecode instructions
@@ -233,7 +234,47 @@ func main() -> int32 {
 }
 ```
 
-### 4. Parsing, AST Inspection & Bytecode Disassembly
+### 4. Asynchronous Promises & Microtasks (§27)
+
+Promises and microtasks run on the ECMAScript job queue, executing automatically after top-level evaluations or explicitly via `realm.RunJobs()`:
+
+```swift
+package main
+
+import "js"
+
+func main() -> int32 {
+    let realm = js.Realm()
+
+    let script = """
+    var log = [];
+    Promise.resolve("hello")
+        .then(function(val) {
+            log.push(val + " world");
+            return 42;
+        })
+        .then(function(num) {
+            log.push("number: " + num);
+        });
+
+    queueMicrotask(function() {
+        log.push("microtask");
+    });
+
+    // Returns array of log entries collected when microtasks drained
+    log.join(" | ");
+    """
+
+    // Eval evaluates script and automatically drains the microtask queue
+    _ = try! realm.Eval(script)
+    let outcome = try! realm.Eval("log.join(' | ');")
+    print("Async trace: " + outcome.ToString())
+    // Output: Async trace: hello world | microtask | number: 42
+    return 0
+}
+```
+
+### 5. Parsing, AST Inspection & Bytecode Disassembly
 
 You can use the front end and bytecode packages independently for tooling, linting, or offline compilation:
 

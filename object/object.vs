@@ -300,4 +300,42 @@ public final class Realm {
         fn.Set("length", value.Value.Int(int32(code.ParameterCount)))
         return Heap.Allocate(fn, size: 64, typeTag: 10)
     }
+
+    // Microtask queue & VM call hook
+    public var EnqueueJobHook: ((@escaping () -> Void) -> Void)? = nil
+    var microtasks: [() -> Void] = []
+    public var CallHook: ((Realm, JSObject, value.Value, [value.Value]) throws -> value.Value)? = nil
+
+    public func EnqueueJob(_ job: @escaping () -> Void) {
+        if let hook = EnqueueJobHook {
+            hook(job)
+        } else {
+            microtasks.append(job)
+        }
+    }
+
+    public func RunJobs() {
+        var count = 0
+        while !microtasks.isEmpty && count < 10000 {
+            count += 1
+            let job = microtasks.removeFirst()
+            job()
+        }
+    }
+
+    public func Call(_ obj: JSObject, thisVal: value.Value = value.Value.Undefined, args: [value.Value] = []) throws -> value.Value {
+        guard let callable = obj.Callable else {
+            return value.Value.Undefined
+        }
+        switch callable {
+        case .native(let cb):
+            return try cb(self, thisVal, args)
+        case .bytecode:
+            if let hook = CallHook {
+                return try hook(self, obj, thisVal, args)
+            }
+            return value.Value.Undefined
+        }
+    }
 }
+

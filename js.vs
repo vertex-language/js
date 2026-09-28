@@ -23,6 +23,7 @@ import (
     "js/builtin/keyed"
     "js/builtin/structured"
     "js/builtin/memory"
+    "js/builtin/control"
     "js/regexp"
 )
 
@@ -68,6 +69,17 @@ public final class Realm {
             return v.CollectRoots()
         }
 
+        // Wire up VM CallHook so built-ins can invoke JS closures
+        r.CallHook = { [weak vm] realm, obj, thisVal, args in
+            guard let v = vm, let callable = obj.Callable else { return value.Value.Undefined }
+            switch callable {
+            case .native(let cb):
+                return try cb(realm, thisVal, args)
+            case .bytecode(let code):
+                return try v.Run(code, realm: realm, thisValue: thisVal, args: args)
+            }
+        }
+
         // Register built-in packages into the realm
         global.Register(into: r)
         fundamental.Register(into: r)
@@ -77,6 +89,7 @@ public final class Realm {
         keyed.Register(into: r)
         structured.Register(into: r)
         memory.Register(into: r)
+        control.Register(into: r)
     }
 
     public var Heap: gc.Heap {
@@ -115,7 +128,9 @@ public final class Realm {
         do {
             let prog = try parser.ParseScript(source, filename: filename)
             let code = try codegen.Compile(prog)
-            return try VM.Run(code, realm: Inner)
+            let res = try VM.Run(code, realm: Inner)
+            Inner.RunJobs()
+            return res
         } catch let parseErr as parser.ParseError {
             throw Exception(message: parseErr.description)
         } catch let scopeErr as scope.ScopeError {
@@ -132,12 +147,20 @@ public final class Realm {
         guard let obj = fnVal.ObjVal as? object.JSObject, let callable = obj.Callable else {
             throw Exception(message: "TypeError: \(fnVal) is not a function")
         }
+        let res: value.Value
         switch callable {
         case .native(let cb):
-            return try cb(Inner, thisArg, args)
+            res = try cb(Inner, thisArg, args)
         case .bytecode(let code):
-            return try VM.Run(code, realm: Inner, thisValue: thisArg, args: args)
+            res = try VM.Run(code, realm: Inner, thisValue: thisArg, args: args)
         }
+        Inner.RunJobs()
+        return res
+    }
+
+    /// RunJobs drains the pending microtask job queue in this realm.
+    public func RunJobs() {
+        Inner.RunJobs()
     }
 }
 

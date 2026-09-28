@@ -60,6 +60,9 @@ func main() -> int32 {
     // 10. Garbage Collection & Memory Primitives
     testGarbageCollectionAndMemoryPrimitives()
 
+    // 11. Control Abstraction & Promises
+    testControlAndPromises()
+
     print("\nSummary: \(failures == 0 ? "ALL PASSED" : "\(failures) FAILED")")
     return failures == 0 ? 0 : 1
 }
@@ -392,3 +395,115 @@ func testGarbageCollectionAndMemoryPrimitives() {
         check(false, "finalizer error: \(error)")
     }
 }
+
+func testControlAndPromises() {
+    let realm = js.Realm()
+
+    // 11.1 Promise.resolve and .then
+    do {
+        _ = try realm.Eval("""
+        var out = 0;
+        Promise.resolve(42).then(function(v) {
+            out = v;
+        });
+        """)
+        let res = try realm.Eval("out;")
+        check(res.ToInt32() == 42, "promise: Promise.resolve and .then update state to 42")
+    } catch {
+        check(false, "promise resolve error: \(error)")
+    }
+
+    // 11.2 new Promise constructor with asynchronous executor resolution
+    do {
+        _ = try realm.Eval("""
+        var outcome = "";
+        let p = new Promise(function(resolve, reject) {
+            resolve("resolved_value");
+        });
+        p.then(function(val) {
+            outcome = val;
+        });
+        """)
+        let res = try realm.Eval("outcome;")
+        check(res.ToString() == "resolved_value", "promise: constructor resolution propagates to .then")
+    } catch {
+        check(false, "promise constructor error: \(error)")
+    }
+
+    // 11.3 Promise chaining (.then -> .then)
+    do {
+        _ = try realm.Eval("""
+        var chained = 0;
+        Promise.resolve(10)
+            .then(function(x) { return x * 2; })
+            .then(function(y) { chained = y + 5; });
+        """)
+        let res = try realm.Eval("chained;")
+        check(res.ToInt32() == 25, "promise: promise chaining 10 * 2 + 5 = 25")
+    } catch {
+        check(false, "promise chaining error: \(error)")
+    }
+
+    // 11.4 Promise rejection and .catch recovery
+    do {
+        _ = try realm.Eval("""
+        var recovered = "";
+        Promise.reject("original_error")
+            .catch(function(err) {
+                return "recovered_from_" + err;
+            })
+            .then(function(res) {
+                recovered = res;
+            });
+        """)
+        let res = try realm.Eval("recovered;")
+        check(res.ToString() == "recovered_from_original_error", "promise: rejection handled and recovered via .catch")
+    } catch {
+        check(false, "promise catch error: \(error)")
+    }
+
+    // 11.5 Promise.all
+    do {
+        _ = try realm.Eval("""
+        var allResult = "";
+        Promise.all([Promise.resolve("A"), Promise.resolve("B"), Promise.resolve("C")])
+            .then(function(arr) {
+                allResult = arr.join("-");
+            });
+        """)
+        let res = try realm.Eval("allResult;")
+        check(res.ToString() == "A-B-C", "promise: Promise.all resolves all items in order")
+    } catch {
+        check(false, "promise.all error: \(error)")
+    }
+
+    // 11.6 Promise.race
+    do {
+        _ = try realm.Eval("""
+        var raceWinner = "";
+        Promise.race([Promise.resolve("first"), Promise.resolve("second")])
+            .then(function(winner) {
+                raceWinner = winner;
+            });
+        """)
+        let res = try realm.Eval("raceWinner;")
+        check(res.ToString() == "first", "promise: Promise.race resolves with the first settled item")
+    } catch {
+        check(false, "promise.race error: \(error)")
+    }
+
+    // 11.7 queueMicrotask
+    do {
+        _ = try realm.Eval("""
+        var microtaskRun = false;
+        queueMicrotask(function() {
+            microtaskRun = true;
+        });
+        """)
+        let res = try realm.Eval("microtaskRun;")
+        check(res.ToBoolean(), "microtask: queueMicrotask executes after script finishes")
+    } catch {
+        check(false, "queueMicrotask error: \(error)")
+    }
+}
+

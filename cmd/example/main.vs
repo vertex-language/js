@@ -55,6 +55,16 @@ func main() -> int32 {
     cache.set(key, { payload: "Secret Data" });
     hostLog("WeakMap cache lookup:", JSON.stringify(cache.get(key)));
 
+    // Promise & Microtask demonstration
+    Promise.resolve("Data from Promise")
+        .then(function(msg) {
+            hostLog("Async Promise resolved:", msg);
+        });
+
+    queueMicrotask(function() {
+        hostLog("Microtask executed via queueMicrotask!");
+    });
+
     // Return final result to host
     JSON.stringify({ status: "success", count: items.length, total: sum });
     """

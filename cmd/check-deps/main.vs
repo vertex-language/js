@@ -115,6 +115,16 @@ func main() -> int32 {
             pkg: "js/builtin/structured",
             allowedImports: ["js/object", "js/value"],
             forbiddenPrefixes: ["js/interp", "js/parser", "js/scanner", "web"]
+        ),
+        PackageRule(
+            pkg: "js/builtin/memory",
+            allowedImports: ["js/object", "js/value"],
+            forbiddenPrefixes: ["js/interp", "js/parser", "js/scanner", "web"]
+        ),
+        PackageRule(
+            pkg: "js/builtin/control",
+            allowedImports: ["js/object", "js/value"],
+            forbiddenPrefixes: ["js/interp", "js/parser", "js/scanner", "web"]
         )
     ]
 
@@ -142,6 +152,8 @@ func main() -> int32 {
         "js/builtin/indexed": ["js/object", "js/value"],
         "js/builtin/keyed": ["js/object", "js/value"],
         "js/builtin/structured": ["js/object", "js/value"],
+        "js/builtin/memory": ["js/object", "js/value"],
+        "js/builtin/control": ["js/object", "js/value"],
         "js/regexp/syntax": [],
         "js/regexp": ["js/regexp/syntax"]
     ]
