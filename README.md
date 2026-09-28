@@ -2,7 +2,7 @@
 
 [![package: vs-package](https://img.shields.io/badge/package-vs--package-f4f4f5?style=flat-square&labelColor=e4e4e7&color=18181b)](https://github.com/vertex-language)
 [![js: ecmascript-engine](https://img.shields.io/badge/js-ecmascript--engine-f4f4f5?style=flat-square&labelColor=e4e4e7&color=18181b)](https://github.com/vertex-language/js)
-[![tests: 52/52 passing](https://img.shields.io/badge/tests-52%2F52%20passing-10b981?style=flat-square&labelColor=e4e4e7)](https://github.com/vertex-language/js)
+[![tests: 59/59 passing](https://img.shields.io/badge/tests-59%2F59%20passing-10b981?style=flat-square&labelColor=e4e4e7)](https://github.com/vertex-language/js)
 
 A modern ECMAScript standard engine written in pure Vertex.
 
@@ -33,7 +33,7 @@ The engine has no C/C++ runtime dependencies, no Cgo, and compiles directly with
 | **§22: Text Processing** | `String` methods, `RegExp` pattern AST, regex backtracking engine | **Complete** | UTF-16 Latin-1/2-byte `JSString` ropes and atoms, regex matcher supporting flags `g`, `i`, `m`, `s`, `u`, `y`. |
 | **§23: Indexed Collections** | `Array` constructor, `isArray`, `push`, `pop`, `shift`, `unshift`, `join`, `slice`, `indexOf` | **Complete** | Contiguous element storage with dynamic resizing in `js/builtin/indexed`. |
 | **§24: Keyed Collections** | `Map`, `Set`, `WeakMap`, `WeakSet` | **Complete** | Full hash-based `Map` and `Set`. `WeakMap` and `WeakSet` backed by GC ephemeron tables (`gc.Heap.Ephemerons`). |
-| **§25: Structured Data** | `JSON.stringify`, `JSON.parse`, `ArrayBuffer`, `DataView`, `TypedArray` family | **Partial** | `JSON` serialization and parsing complete. `ArrayBuffer`, `DataView`, and typed arrays scheduled next for Phase 2. |
+| **§25: Structured Data** | `JSON.stringify`, `JSON.parse`, `ArrayBuffer`, `DataView`, `TypedArray` family | **Complete** | `JSON`, `ArrayBuffer`, `DataView`, and complete `TypedArray` family (`Int8Array`, `Uint8Array`, `Uint8ClampedArray`, `Int16Array`, `Uint16Array`, `Int32Array`, `Uint32Array`, `Float32Array`, `Float64Array`). |
 | **§26: Managing Memory** | `WeakRef`, `FinalizationRegistry`, Traced Heap, Write Barriers, Ephemerons | **Complete** | `JSObject` inherits from `gc.Cell`. Exact tracing, write barriers, root providers, weak references, cleanup callbacks. |
 | **§27: Control Abstraction** | Microtask queue, `Promise` (`then`, `catch`, `finally`, combinators), `queueMicrotask` | **Complete** | `Promise` constructor, thenable unwrapping, microtask reactions, combinators (`all`, `race`, `allSettled`, `any`), `queueMicrotask`. |
 | **§28: Reflection** | `Reflect` namespace and `Proxy` with 13 internal traps | **Planned** | Dynamic interception traps scheduled for Phase 3. |
@@ -274,7 +274,51 @@ func main() -> int32 {
 }
 ```
 
-### 5. Parsing, AST Inspection & Bytecode Disassembly
+### 5. Binary Buffers & Typed Arrays (§25)
+
+Perform high-performance binary manipulations across `ArrayBuffer`, `DataView`, and typed arrays (`Uint8Array`, `Float32Array`, `Uint8ClampedArray`):
+
+```swift
+package main
+
+import "js"
+
+func main() -> int32 {
+    let realm = js.Realm()
+
+    let script = """
+    // Allocate a 16-byte buffer and view as 32-bit floats
+    let buffer = new ArrayBuffer(16);
+    let floats = new Float32Array(buffer);
+    floats[0] = 1.25;
+    floats[1] = 42.5;
+
+    // View same buffer with multi-endian DataView
+    let view = new DataView(buffer);
+    let firstFloat = view.getFloat32(0, true);
+
+    // Canvas ImageData clamped pixel buffer
+    let pixels = new Uint8ClampedArray(4);
+    pixels[0] = 300;  // clamps to 255
+    pixels[1] = -50;  // clamps to 0
+    pixels[2] = 128;
+
+    JSON.stringify({
+        first: firstFloat,
+        r: pixels[0],
+        g: pixels[1],
+        b: pixels[2]
+    });
+    """
+
+    let res = try! realm.Eval(script)
+    print("Binary result: " + res.ToString())
+    // Output: Binary result: {"first":1.25,"r":255,"g":0,"b":128}
+    return 0
+}
+```
+
+### 6. Parsing, AST Inspection & Bytecode Disassembly
 
 You can use the front end and bytecode packages independently for tooling, linting, or offline compilation:
 

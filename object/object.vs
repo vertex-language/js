@@ -95,6 +95,7 @@ public final class JSObject: gc.Cell {
     public var IsConstructor: bool = false
     public var InternalTag: string = "Object"
     public var NativeData: AnyObject? = nil
+    public var ElementHook: ((JSObject, int, value.Value?) -> value.Value?)? = nil
 
     public init(shape: Shape? = nil, prototype: JSObject? = nil) {
         self.CurrentShape = shape ?? Shape.Root()
@@ -193,6 +194,11 @@ public final class JSObject: gc.Cell {
 
     // Indexed elements
     public func GetElement(_ index: int) -> value.Value {
+        if let hook = ElementHook {
+            if let val = hook(self, index, nil) {
+                return val
+            }
+        }
         if index >= 0 && index < Elements.count {
             return Elements[index]
         }
@@ -200,6 +206,11 @@ public final class JSObject: gc.Cell {
     }
 
     public func SetElement(_ index: int, _ val: value.Value) {
+        if let hook = ElementHook {
+            if hook(self, index, val) != nil {
+                return
+            }
+        }
         if index >= 0 {
             while Elements.count <= index {
                 Elements.append(value.Value.Undefined)

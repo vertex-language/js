@@ -27,6 +27,9 @@ public func Register(into realm: object.Realm) {
     }))
 
     g.Set("JSON", value.Value.Object(jsonObj))
+
+    // Register ArrayBuffer, DataView, and TypedArray family (§25.1-§25.4)
+    registerBuffers(into: realm)
 }
 
 func stringifyValue(_ val: value.Value) -> string {

@@ -63,6 +63,9 @@ func main() -> int32 {
     // 11. Control Abstraction & Promises
     testControlAndPromises()
 
+    // 12. Structured Binary Data & TypedArrays
+    testBinaryDataAndTypedArrays()
+
     print("\nSummary: \(failures == 0 ? "ALL PASSED" : "\(failures) FAILED")")
     return failures == 0 ? 0 : 1
 }
@@ -506,4 +509,113 @@ func testControlAndPromises() {
         check(false, "queueMicrotask error: \(error)")
     }
 }
+
+func testBinaryDataAndTypedArrays() {
+    let realm = js.Realm()
+
+    // 12.1 ArrayBuffer and slice
+    do {
+        let script = """
+        let ab = new ArrayBuffer(16);
+        let slice = ab.slice(4, 12);
+        ab.byteLength === 16 && slice.byteLength === 8;
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "arraybuffer: byteLength and slice behave per specification")
+    } catch {
+        check(false, "arraybuffer error: \(error)")
+    }
+
+    // 12.2 DataView reads and writes
+    do {
+        let script = """
+        let ab = new ArrayBuffer(8);
+        let dv = new DataView(ab);
+        dv.setUint8(0, 255);
+        dv.setInt16(1, -1000, true);
+        (dv.getUint8(0) === 255) && (dv.getInt16(1, true) === -1000);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "dataview: multi-endian get/setUint8 and get/setInt16 pass")
+    } catch {
+        check(false, "dataview error: \(error)")
+    }
+
+    // 12.3 Uint8Array indexed read and write
+    do {
+        let script = """
+        let u8 = new Uint8Array(4);
+        u8[0] = 10;
+        u8[1] = 20;
+        u8[0] + u8[1] === 30 && u8.length === 4 && u8.byteLength === 4;
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "typedarray: Uint8Array indexed element read and write pass")
+    } catch {
+        check(false, "uint8array error: \(error)")
+    }
+
+    // 12.4 Uint8ClampedArray clamping semantics
+    do {
+        let script = """
+        let clamped = new Uint8ClampedArray(3);
+        clamped[0] = 300;
+        clamped[1] = -50;
+        clamped[2] = 127.6;
+        clamped[0] === 255 && clamped[1] === 0 && clamped[2] === 128;
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "typedarray: Uint8ClampedArray clamping and rounding pass")
+    } catch {
+        check(false, "uint8clampedarray error: \(error)")
+    }
+
+    // 12.5 Float32Array & Float64Array
+    do {
+        let script = """
+        let f32 = new Float32Array(2);
+        f32[0] = 3.5;
+        let f64 = new Float64Array(1);
+        f64[0] = 123456.789;
+        (f32[0] === 3.5) && (f64[0] === 123456.789);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "typedarray: Float32Array and Float64Array float precision pass")
+    } catch {
+        check(false, "float array error: \(error)")
+    }
+
+    // 12.6 Shared ArrayBuffer across views
+    do {
+        let script = """
+        let ab = new ArrayBuffer(4);
+        let u8 = new Uint8Array(ab);
+        let u32 = new Uint32Array(ab);
+        u8[0] = 1;
+        u8[1] = 0;
+        u8[2] = 0;
+        u8[3] = 0;
+        u32[0] === 1;
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "typedarray: shared ArrayBuffer reflected across distinct views")
+    } catch {
+        check(false, "shared buffer error: \(error)")
+    }
+
+    // 12.7 ArrayBuffer.isView
+    do {
+        let script = """
+        let ab = new ArrayBuffer(8);
+        let u8 = new Uint8Array(ab);
+        let dv = new DataView(ab);
+        ArrayBuffer.isView(u8) && ArrayBuffer.isView(dv) && !ArrayBuffer.isView(ab);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "arraybuffer: ArrayBuffer.isView correctly identifies views")
+    } catch {
+        check(false, "isView error: \(error)")
+    }
+}
+
 
