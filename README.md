@@ -17,31 +17,40 @@ PDF renderer -- links none of this.
 
 ## Packages (planned)
 
-| Package | What it is |
-| :--- | :--- |
-| **`js/syntax`** | The lexer, the parser, the AST and early errors, for ES2025. |
-| **`js/compile`** | Scope analysis, and the AST to bytecode. |
-| **`js/vm`** | The bytecode interpreter: values, objects and their shapes, inline caches, and a tracing collector for the JS heap. |
-| **`js/builtins`** | `Object`, `Function`, `Array`, `Promise`, `Map`, `Set`, typed arrays, `JSON`, `Date`, `Proxy`, `Reflect`, and the rest of the standard library. |
-| **`js/regexp`** | The ECMAScript regular expression engine. |
-| **`js`** | The front door: `Realm`, `Value`, `Eval`, modules, and the host hooks. |
+`proposed_js_package.md` (on the Desktop) has the full plan. In short:
 
-`cmd/test262` runs the ECMAScript conformance suite and prints a pass
-count per feature directory: progress is a number. `cmd/repl` evaluates
-lines. `cmd/check` is the offline test program, as in every repository.
+| Group | Packages |
+| :--- | :--- |
+| Front end (like Go's `go/token`, `go/scanner`, `go/ast`, `go/parser`) | `js/token`, `js/scanner`, `js/ast`, `js/parser`, `js/scope`, `js/printer` |
+| Bytecode | `js/bytecode`, `js/codegen` |
+| Runtime | `js/value` (NaN-boxed), `js/str` (UTF-16 strings, ropes, atoms), `js/object` (shapes, properties), `js/ic` (inline caches), `js/interp`, `js/module` |
+| Built-ins, by ECMA-262 chapter | `js/builtin/global`, `fundamental`, `numeric`, `text`, `indexed`, `keyed`, `structured`, `memory`, `control`, `reflection`, later `intl` |
+| Regular expressions | `js/regexp/syntax`, `js/regexp` |
+| Embedding | `js`: `Agent`, `Realm`, `Value`, `Eval`, and the host hooks |
+
+It builds on other repositories rather than copying them: `gc` (the traced heap),
+`text/unicode`, `text/norm` and `text/strconv`, `math/big` (BigInt), `time/zone`
+(Date), and later `intl`.
+
+`cmd/test262` runs the ECMAScript conformance suite and prints a pass count
+per feature directory: progress is a number. `cmd/repl`, `cmd/dis`,
+`cmd/fuzz`, `cmd/bench`, and `cmd/check`, the offline test program.
 
 ---
 
 ## Order
 
-1. `js/syntax` and `js/compile`, to test262's parser tests.
-2. `js/vm` and `js/builtins`, to test262's language and built-ins, with
-   the host hooks stubbed.
+1. The front end, to test262's parser tests.
+2. `gc`, the runtime and the built-ins, to test262's language and built-ins,
+   with the host hooks stubbed.
 3. `web/script` in the `web` repository: WebIDL bindings, the HTML event
    loop, `<script>`.
+4. Speed without a JIT: off-main-thread compiling, a bytecode cache, a
+   generational GC.
 
-No JIT until the web engine can isolate a site's pages in a process of
-their own. `proposed_webview.md` has the reasons.
+An interpreter is the engine. Machine code (`isa`, `jit`) comes only if
+measurements on real sites ask for it, and only after the web engine
+isolates sites in processes of their own.
 
 ---
 
