@@ -12,7 +12,32 @@ The engine has no C/C++ runtime dependencies, no Cgo, and compiles directly with
 
 ---
 
-## Architecture & Packages
+## Target Specification & Coverage
+
+- **Target Standard:** **ECMAScript 2026 (ECMA-262, 17th Edition)**
+- **Conformance Target:** Official ECMAScript Conformance Test Suite (**test262**)
+- **Architecture Philosophy:** Universal embedding, pure Vertex (`.vs`), fast register-accumulator bytecode (Ignition design), unboxed tagged values, shape-based property transitions, and precise traced garbage collection (`gc`).
+
+### ECMA-262 Specification Status Matrix
+
+| ECMA-262 Chapter | Specification Scope | Status | Implementation Details |
+| :--- | :--- | :---: | :--- |
+| **§6–§9: Types & Conversions** | Values, primitives, records, `ToBoolean`, `ToInt32`, `ToNumber`, `ToString` | **Complete** | Tagged unboxed `Value` representation, NaN/overflow wrapping, abstract (`==`) and strict (`===`) equality. |
+| **§10–§11: Source & Lexer** | UTF-8 scanning, keywords, literals, template strings, ASI | **Complete** | Full lexer in `js/scanner`, decimal/hex/binary/octal/float literals, ASI tracking, comment preservation. |
+| **§12–§14: Statements & Syntax** | AST, expressions, precedence, declarations (`var`, `let`, `const`), loops, control flow | **Complete** | Recursive descent parser in `js/parser`, lexical environments & TDZ in `js/scope`, AST formatting in `js/printer`. |
+| **§15: Functions & Classes** | Functions, closures, recursion, constructors, `class`, `extends`, `super` | **Partial** | Full function expressions, declarations, closures, and constructor calls (`new Ctor`). `class` syntax, `super`, and private fields (`#field`) scheduled for Phase 2. |
+| **§16: Modules** | Static module records, imports, exports | **Built** | `SourceTextModuleRecord`, `ImportEntry`, `ExportEntry` structures in `js/module`. |
+| **§19: Global Object** | `globalThis`, `isFinite`, `isNaN`, `parseInt`, `parseFloat`, `gc()` | **Complete** | Standard global functions, `globalThis` self-referential linkage, diagnostic garbage collector trigger. |
+| **§20: Fundamental Objects** | `Object`, `Function`, `Boolean`, `Error`, `TypeError`, `RangeError`, `SyntaxError` | **Complete** | Prototypes, shape transition trees (`js/object`), `Object.keys`, `Object.getPrototypeOf`, `Function.prototype.call`. |
+| **§21: Numbers & Math** | `Number`, `Math` (`abs`, `floor`, `ceil`, `round`, `min`, `max`, `sqrt`) | **Complete** | Full IEEE-754 double operations in `js/builtin/numeric`. (`Date` pending `time` package integration). |
+| **§22: Text Processing** | `String` methods, `RegExp` pattern AST, regex backtracking engine | **Complete** | UTF-16 Latin-1/2-byte `JSString` ropes and atoms, regex matcher supporting flags `g`, `i`, `m`, `s`, `u`, `y`. |
+| **§23: Indexed Collections** | `Array` constructor, `isArray`, `push`, `pop`, `shift`, `unshift`, `join`, `slice`, `indexOf` | **Complete** | Contiguous element storage with dynamic resizing in `js/builtin/indexed`. |
+| **§24: Keyed Collections** | `Map`, `Set`, `WeakMap`, `WeakSet` | **Complete** | Full hash-based `Map` and `Set`. `WeakMap` and `WeakSet` backed by GC ephemeron tables (`gc.Heap.Ephemerons`). |
+| **§25: Structured Data** | `JSON.stringify`, `JSON.parse`, `ArrayBuffer`, `DataView`, `TypedArray` family | **Partial** | `JSON` serialization and parsing complete. `ArrayBuffer`, `DataView`, and typed arrays scheduled next for Phase 2. |
+| **§26: Managing Memory** | `WeakRef`, `FinalizationRegistry`, Traced Heap, Write Barriers, Ephemerons | **Complete** | `JSObject` inherits from `gc.Cell`. Exact tracing, write barriers, root providers, weak references, cleanup callbacks. |
+| **§27: Control Abstraction** | Microtask queue, `Promise` (`then`, `catch`, `finally`, combinators), `async / await` | **In Progress** | `Agent` microtask queue operational. `Promise` constructor, reactions, and combinators scheduled next for Phase 2. |
+| **§28: Reflection** | `Reflect` namespace and `Proxy` with 13 internal traps | **Planned** | Dynamic interception traps scheduled for Phase 3. |
+| **ECMA-402: Internationalization**| `Intl.DateTimeFormat`, `Intl.NumberFormat`, `Intl.Collator` | **Planned** | Standalone `intl` package with CLDR tables. |
 
 The repository is organized into distinct, decoupled packages following a strict unidirectional pipeline:
 
