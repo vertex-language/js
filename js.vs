@@ -92,6 +92,16 @@ public final class Realm {
         return Inner.GlobalObject
     }
 
+    /// NewObject creates a new JavaScript object associated with this realm.
+    public func NewObject() -> object.JSObject {
+        return Inner.NewObject()
+    }
+
+    /// NewArray creates a new JavaScript array object associated with this realm.
+    public func NewArray(elements: [value.Value] = []) -> object.JSObject {
+        return Inner.NewArray(elements: elements)
+    }
+
     /// DefineFunction exposes a native host function to this Realm's global scope.
     public func DefineFunction(_ name: string, _ callback: @escaping ([value.Value]) throws -> value.Value) {
         let fn = Inner.NewFunction(name: name) { _, _, args in
