@@ -33,6 +33,48 @@ public func Register(into realm: object.Realm) {
     }
     arrayCtor.Set("isArray", value.Value.Object(isArrayFn))
 
+    // Array.from (§23.1.2.1)
+    let fromFn = realm.NewFunction(name: "from") { r, _, args in
+        let out = r.NewArray()
+        if args.isEmpty { return value.Value.Object(out) }
+        var hasMap = false
+        var mapFnObj: object.JSObject? = nil
+        if args.count > 1, let mf = args[1].ObjVal as? object.JSObject {
+            if mf.Callable != nil {
+                hasMap = true
+                mapFnObj = mf
+            }
+        }
+        if let iterObj = args[0].ObjVal as? object.JSObject {
+            for i in 0..<iterObj.Elements.count {
+                var el = iterObj.Elements[i]
+                if hasMap, let mf = mapFnObj {
+                    el = try r.Call(mf, args: [el, value.Value.Int(int32(i))])
+                }
+                out.SetElement(i, el)
+            }
+        } else if args[0].IsString {
+            let str = args[0].ToString()
+            var idx = 0
+            for ch in str {
+                var el = value.Value.String(String(ch))
+                if hasMap, let mf = mapFnObj {
+                    el = try r.Call(mf, args: [el, value.Value.Int(int32(idx))])
+                }
+                out.SetElement(idx, el)
+                idx += 1
+            }
+        }
+        return value.Value.Object(out)
+    }
+    arrayCtor.Set("from", value.Value.Object(fromFn))
+
+    // Array.of (§23.1.2.3)
+    let ofFn = realm.NewFunction(name: "of") { r, _, args in
+        return value.Value.Object(r.NewArray(elements: args))
+    }
+    arrayCtor.Set("of", value.Value.Object(ofFn))
+
     // push
     proto.Set("push", value.Value.Object(realm.NewFunction(name: "push") { _, thisVal, args in
         guard let arr = thisVal.ObjVal as? object.JSObject else { return value.Value.Int(0) }
@@ -144,6 +186,242 @@ public func Register(into realm: object.Realm) {
             }
         }
         return value.Value.False
+    }))
+
+    // at (§23.1.3.1)
+    proto.Set("at", value.Value.Object(realm.NewFunction(name: "at") { _, thisVal, args in
+        guard let arr = thisVal.ObjVal as? object.JSObject, !args.isEmpty else { return value.Value.Undefined }
+        var idx = Int(args[0].ToInt32())
+        let len = arr.Elements.count
+        if idx < 0 { idx = len + idx }
+        if idx >= 0 && idx < len {
+            return arr.Elements[idx]
+        }
+        return value.Value.Undefined
+    }))
+
+    // toReversed (ECMA-262 §23.1.3.33)
+    proto.Set("toReversed", value.Value.Object(realm.NewFunction(name: "toReversed") { r, thisVal, _ in
+        guard let arr = thisVal.ObjVal as? object.JSObject else { return value.Value.Object(r.NewArray()) }
+        let rev = Array(arr.Elements.reversed())
+        return value.Value.Object(r.NewArray(elements: rev))
+    }))
+
+    // toSorted (ECMA-262 §23.1.3.34)
+    proto.Set("toSorted", value.Value.Object(realm.NewFunction(name: "toSorted") { r, thisVal, args in
+        guard let arr = thisVal.ObjVal as? object.JSObject else { return value.Value.Object(r.NewArray()) }
+        var copy = arr.Elements
+        var hasCmp = false
+        var cmpFnObj: object.JSObject? = nil
+        if !args.isEmpty, let fn = args[0].ObjVal as? object.JSObject {
+            if fn.Callable != nil {
+                hasCmp = true
+                cmpFnObj = fn
+            }
+        }
+        if hasCmp, let fn = cmpFnObj {
+            for i in 1..<copy.count {
+                var j = i
+                while j > 0 {
+                    let cmpVal = try r.Call(fn, args: [copy[j - 1], copy[j]])
+                    if cmpVal.ToNumber() > 0 {
+                        copy.swapAt(j - 1, j)
+                        j -= 1
+                    } else {
+                        break
+                    }
+                }
+            }
+        } else {
+            copy.sort { $0.ToString() < $1.ToString() }
+        }
+        return value.Value.Object(r.NewArray(elements: copy))
+    }))
+
+    // toSpliced (ECMA-262 §23.1.3.35)
+    proto.Set("toSpliced", value.Value.Object(realm.NewFunction(name: "toSpliced") { r, thisVal, args in
+        guard let arr = thisVal.ObjVal as? object.JSObject else { return value.Value.Object(r.NewArray()) }
+        let copy = arr.Elements
+        let len = copy.count
+        var start = args.isEmpty ? 0 : Int(args[0].ToInt32())
+        if start < 0 { start = len + start; if start < 0 { start = 0 } }
+        else if start > len { start = len }
+
+        var delCount = args.count > 1 ? Int(args[1].ToInt32()) : (len - start)
+        if delCount < 0 { delCount = 0 }
+        if start + delCount > len { delCount = len - start }
+
+        var insertItems: [value.Value] = []
+        if args.count > 2 {
+            for i in 2..<args.count {
+                insertItems.append(args[i])
+            }
+        }
+        var newElems: [value.Value] = []
+        for i in 0..<start { newElems.append(copy[i]) }
+        for it in insertItems { newElems.append(it) }
+        for i in (start + delCount)..<len { newElems.append(copy[i]) }
+        return value.Value.Object(r.NewArray(elements: newElems))
+    }))
+
+    // with (ECMA-262 §23.1.3.37)
+    proto.Set("with", value.Value.Object(realm.NewFunction(name: "with") { r, thisVal, args in
+        guard let arr = thisVal.ObjVal as? object.JSObject else { return value.Value.Object(r.NewArray()) }
+        let len = arr.Elements.count
+        if args.isEmpty { return value.Value.Object(r.NewArray(elements: arr.Elements)) }
+        var idx = Int(args[0].ToInt32())
+        if idx < 0 { idx = len + idx }
+        if idx < 0 || idx >= len {
+            throw object.RuntimeError.error("RangeError: Invalid index in Array.prototype.with")
+        }
+        var copy = arr.Elements
+        copy[idx] = args.count > 1 ? args[1] : value.Value.Undefined
+        return value.Value.Object(r.NewArray(elements: copy))
+    }))
+
+    // findLast (ECMA-262 §23.1.3.14)
+    proto.Set("findLast", value.Value.Object(realm.NewFunction(name: "findLast") { r, thisVal, args in
+        guard let arr = thisVal.ObjVal as? object.JSObject,
+              !args.isEmpty,
+              let fn = args[0].ObjVal as? object.JSObject,
+              fn.Callable != nil else { return value.Value.Undefined }
+        for i in (0..<arr.Elements.count).reversed() {
+            let el = arr.Elements[i]
+            let test = try r.Call(fn, args: [el, value.Value.Int(int32(i)), thisVal])
+            if test.ToBoolean() { return el }
+        }
+        return value.Value.Undefined
+    }))
+
+    // findLastIndex (ECMA-262 §23.1.3.15)
+    proto.Set("findLastIndex", value.Value.Object(realm.NewFunction(name: "findLastIndex") { r, thisVal, args in
+        guard let arr = thisVal.ObjVal as? object.JSObject,
+              !args.isEmpty,
+              let fn = args[0].ObjVal as? object.JSObject,
+              fn.Callable != nil else { return value.Value.Int(-1) }
+        for i in (0..<arr.Elements.count).reversed() {
+            let el = arr.Elements[i]
+            let test = try r.Call(fn, args: [el, value.Value.Int(int32(i)), thisVal])
+            if test.ToBoolean() { return value.Value.Int(int32(i)) }
+        }
+        return value.Value.Int(-1)
+    }))
+
+    // map (§23.1.3.19)
+    proto.Set("map", value.Value.Object(realm.NewFunction(name: "map") { r, thisVal, args in
+        guard let arr = thisVal.ObjVal as? object.JSObject else { return value.Value.Object(r.NewArray()) }
+        let out = r.NewArray()
+        if args.isEmpty { return value.Value.Object(out) }
+        guard let fn = args[0].ObjVal as? object.JSObject, fn.Callable != nil else { return value.Value.Object(out) }
+        for i in 0..<arr.Elements.count {
+            let res = try r.Call(fn, args: [arr.Elements[i], value.Value.Int(int32(i)), thisVal])
+            out.SetElement(i, res)
+        }
+        return value.Value.Object(out)
+    }))
+
+    // filter (§23.1.3.8)
+    proto.Set("filter", value.Value.Object(realm.NewFunction(name: "filter") { r, thisVal, args in
+        guard let arr = thisVal.ObjVal as? object.JSObject else { return value.Value.Object(r.NewArray()) }
+        let out = r.NewArray()
+        if args.isEmpty { return value.Value.Object(out) }
+        guard let fn = args[0].ObjVal as? object.JSObject, fn.Callable != nil else { return value.Value.Object(out) }
+        for i in 0..<arr.Elements.count {
+            let el = arr.Elements[i]
+            let res = try r.Call(fn, args: [el, value.Value.Int(int32(i)), thisVal])
+            if res.ToBoolean() {
+                out.SetElement(out.Elements.count, el)
+            }
+        }
+        return value.Value.Object(out)
+    }))
+
+    // forEach (§23.1.3.13)
+    proto.Set("forEach", value.Value.Object(realm.NewFunction(name: "forEach") { r, thisVal, args in
+        guard let arr = thisVal.ObjVal as? object.JSObject,
+              !args.isEmpty,
+              let fn = args[0].ObjVal as? object.JSObject,
+              fn.Callable != nil else { return value.Value.Undefined }
+        for i in 0..<arr.Elements.count {
+            _ = try r.Call(fn, args: [arr.Elements[i], value.Value.Int(int32(i)), thisVal])
+        }
+        return value.Value.Undefined
+    }))
+
+    // reduce (§23.1.3.22)
+    proto.Set("reduce", value.Value.Object(realm.NewFunction(name: "reduce") { r, thisVal, args in
+        guard let arr = thisVal.ObjVal as? object.JSObject,
+              !args.isEmpty,
+              let fn = args[0].ObjVal as? object.JSObject,
+              fn.Callable != nil else { return value.Value.Undefined }
+        let len = arr.Elements.count
+        var acc: value.Value
+        var startIdx = 0
+        if args.count > 1 {
+            acc = args[1]
+        } else if len > 0 {
+            acc = arr.Elements[0]
+            startIdx = 1
+        } else {
+            return value.Value.Undefined
+        }
+        for i in startIdx..<len {
+            acc = try r.Call(fn, args: [acc, arr.Elements[i], value.Value.Int(int32(i)), thisVal])
+        }
+        return acc
+    }))
+
+    // find (§23.1.3.9)
+    proto.Set("find", value.Value.Object(realm.NewFunction(name: "find") { r, thisVal, args in
+        guard let arr = thisVal.ObjVal as? object.JSObject,
+              !args.isEmpty,
+              let fn = args[0].ObjVal as? object.JSObject,
+              fn.Callable != nil else { return value.Value.Undefined }
+        for i in 0..<arr.Elements.count {
+            let el = arr.Elements[i]
+            let test = try r.Call(fn, args: [el, value.Value.Int(int32(i)), thisVal])
+            if test.ToBoolean() { return el }
+        }
+        return value.Value.Undefined
+    }))
+
+    // findIndex (§23.1.3.10)
+    proto.Set("findIndex", value.Value.Object(realm.NewFunction(name: "findIndex") { r, thisVal, args in
+        guard let arr = thisVal.ObjVal as? object.JSObject,
+              !args.isEmpty,
+              let fn = args[0].ObjVal as? object.JSObject,
+              fn.Callable != nil else { return value.Value.Int(-1) }
+        for i in 0..<arr.Elements.count {
+            let test = try r.Call(fn, args: [arr.Elements[i], value.Value.Int(int32(i)), thisVal])
+            if test.ToBoolean() { return value.Value.Int(int32(i)) }
+        }
+        return value.Value.Int(-1)
+    }))
+
+    // some (§23.1.3.27)
+    proto.Set("some", value.Value.Object(realm.NewFunction(name: "some") { r, thisVal, args in
+        guard let arr = thisVal.ObjVal as? object.JSObject,
+              !args.isEmpty,
+              let fn = args[0].ObjVal as? object.JSObject,
+              fn.Callable != nil else { return value.Value.False }
+        for i in 0..<arr.Elements.count {
+            let test = try r.Call(fn, args: [arr.Elements[i], value.Value.Int(int32(i)), thisVal])
+            if test.ToBoolean() { return value.Value.True }
+        }
+        return value.Value.False
+    }))
+
+    // every (§23.1.3.5)
+    proto.Set("every", value.Value.Object(realm.NewFunction(name: "every") { r, thisVal, args in
+        guard let arr = thisVal.ObjVal as? object.JSObject,
+              !args.isEmpty,
+              let fn = args[0].ObjVal as? object.JSObject,
+              fn.Callable != nil else { return value.Value.True }
+        for i in 0..<arr.Elements.count {
+            let test = try r.Call(fn, args: [arr.Elements[i], value.Value.Int(int32(i)), thisVal])
+            if !test.ToBoolean() { return value.Value.False }
+        }
+        return value.Value.True
     }))
 
     g.Set("Array", value.Value.Object(arrayCtor))

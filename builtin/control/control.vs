@@ -536,6 +536,31 @@ public func Register(into realm: object.Realm) {
         return value.Value.Object(anyP)
     }))
 
+    // Promise.withResolvers (ECMA-262 §27.2.4.8)
+    promiseCtor.Set("withResolvers", value.Value.Object(realm.NewFunction(name: "withResolvers") { r, _, _ in
+        let pair = newPromise(realm: r, prototype: promiseProto)
+        let promiseObj = pair.0
+        let rec = pair.1
+
+        let resolveFn = r.NewFunction(name: "resolve") { r, _, rArgs in
+            let res = rArgs.isEmpty ? value.Value.Undefined : rArgs[0]
+            resolvePromise(realm: r, record: rec, promiseObj: promiseObj, resolution: res)
+            return value.Value.Undefined
+        }
+
+        let rejectFn = r.NewFunction(name: "reject") { r, _, rArgs in
+            let reason = rArgs.isEmpty ? value.Value.Undefined : rArgs[0]
+            rejectPromise(realm: r, record: rec, reason: reason)
+            return value.Value.Undefined
+        }
+
+        let resObj = r.NewObject()
+        resObj.Set("promise", value.Value.Object(promiseObj))
+        resObj.Set("resolve", value.Value.Object(resolveFn))
+        resObj.Set("reject", value.Value.Object(rejectFn))
+        return value.Value.Object(resObj)
+    }))
+
     // queueMicrotask
     let queueMicrotaskFn = realm.NewFunction(name: "queueMicrotask") { r, _, args in
         if !args.isEmpty, let fnObj = args[0].ObjVal as? object.JSObject, fnObj.Callable != nil {

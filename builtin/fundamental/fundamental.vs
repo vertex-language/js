@@ -106,6 +106,73 @@ public func Register(into realm: object.Realm) {
     }
     objectCtor.Set("getPrototypeOf", value.Value.Object(getProtoFn))
 
+    // Object.entries (§20.1.2.5)
+    let entriesFn = realm.NewFunction(name: "entries") { r, _, args in
+        let arr = r.NewArray()
+        if args.isEmpty || !args[0].IsObject { return value.Value.Object(arr) }
+        if let obj = args[0].ObjVal as? object.JSObject {
+            let k = obj.Keys
+            for i in 0..<k.count {
+                let pair = r.NewArray(elements: [value.Value.String(k[i]), obj.Get(k[i])])
+                arr.SetElement(i, value.Value.Object(pair))
+            }
+        }
+        return value.Value.Object(arr)
+    }
+    objectCtor.Set("entries", value.Value.Object(entriesFn))
+
+    // Object.fromEntries (§20.1.2.7)
+    let fromEntriesFn = realm.NewFunction(name: "fromEntries") { r, _, args in
+        let obj = r.NewObject()
+        if args.isEmpty { return value.Value.Object(obj) }
+        if let iterObj = args[0].ObjVal as? object.JSObject {
+            for entryVal in iterObj.Elements {
+                if let entry = entryVal.ObjVal as? object.JSObject, entry.Elements.count >= 2 {
+                    let k = entry.Elements[0].ToString()
+                    let v = entry.Elements[1]
+                    obj.Set(k, v)
+                }
+            }
+        }
+        return value.Value.Object(obj)
+    }
+    objectCtor.Set("fromEntries", value.Value.Object(fromEntriesFn))
+
+    // Object.hasOwn (§20.1.2.13)
+    let hasOwnFn = realm.NewFunction(name: "hasOwn") { _, _, args in
+        if args.count < 2 { return value.Value.False }
+        guard let obj = args[0].ObjVal as? object.JSObject else { return value.Value.False }
+        let prop = args[1].ToString()
+        return value.Value.Boolean(obj.HasOwn(prop))
+    }
+    objectCtor.Set("hasOwn", value.Value.Object(hasOwnFn))
+
+    // Object.groupBy (§20.1.2.14)
+    let groupByFn = realm.NewFunction(name: "groupBy") { r, _, args in
+        let outObj = r.NewObject(prototype: nil)
+        if args.count < 2 { return value.Value.Object(outObj) }
+        guard let items = args[0].ObjVal as? object.JSObject,
+              let callback = args[1].ObjVal as? object.JSObject,
+              callback.Callable != nil else {
+            return value.Value.Object(outObj)
+        }
+        for i in 0..<items.Elements.count {
+            let el = items.Elements[i]
+            let keyVal = try r.Call(callback, args: [el, value.Value.Int(int32(i))])
+            let groupKey = keyVal.ToString()
+            let groupArr: object.JSObject
+            if outObj.HasOwn(groupKey), let existing = outObj.Get(groupKey).ObjVal as? object.JSObject {
+                groupArr = existing
+            } else {
+                groupArr = r.NewArray()
+                outObj.Set(groupKey, value.Value.Object(groupArr))
+            }
+            groupArr.SetElement(groupArr.Elements.count, el)
+        }
+        return value.Value.Object(outObj)
+    }
+    objectCtor.Set("groupBy", value.Value.Object(groupByFn))
+
     g.Set("Object", value.Value.Object(objectCtor))
 
     // Object.prototype.toString

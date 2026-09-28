@@ -66,6 +66,12 @@ func main() -> int32 {
     // 12. Structured Binary Data & TypedArrays
     testBinaryDataAndTypedArrays()
 
+    // 14. Modern Syntax Features (Rest, Spread, Template Literals)
+    testModernSyntaxFeatures()
+
+    // 15. ECMAScript 2023-2026 Built-ins (Change Array by Copy, withResolvers, groupBy, Set Methods)
+    testECMAScript2024To2026Builtins()
+
     print("\nSummary: \(failures == 0 ? "ALL PASSED" : "\(failures) FAILED")")
     return failures == 0 ? 0 : 1
 }
@@ -741,6 +747,225 @@ func testBinaryDataAndTypedArrays() {
         check(res.ToBoolean(), "timer: setTimeout schedules job and clearTimeout cancels job")
     } catch {
         check(false, "timer error: \(error)")
+    }
+}
+
+func testModernSyntaxFeatures() {
+    let realm = js.Realm()
+
+    // 14.1 Rest parameter in function declaration
+    do {
+        let script = """
+        function sumWithMultiplier(multiplier, ...nums) {
+            let total = 0;
+            for (let i = 0; i < nums.length; i = i + 1) {
+                total = total + nums[i];
+            }
+            return total * multiplier;
+        }
+        sumWithMultiplier(2, 1, 2, 3, 4) === 20;
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "syntax: rest parameter in function declaration packs arguments into Array")
+    } catch {
+        check(false, "rest param in functionDecl error: \(error)")
+    }
+
+    // 14.2 Rest parameter in arrow function
+    do {
+        let script = """
+        let countArgs = (...args) => args.length;
+        countArgs(10, 20, 30, 40) === 4;
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "syntax: rest parameter in arrow function works as expected")
+    } catch {
+        check(false, "rest param in arrow error: \(error)")
+    }
+
+    // 14.3 Array spread
+    do {
+        let script = """
+        let base = [2, 3];
+        let combined = [1, ...base, 4, 5];
+        (combined.length === 5) && (combined[0] === 1) && (combined[1] === 2) && (combined[2] === 3) && (combined[3] === 4) && (combined[4] === 5);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "syntax: array literal spread expands iterable elements")
+    } catch {
+        check(false, "array spread error: \(error)")
+    }
+
+    // 14.4 Function call with spread arguments
+    do {
+        let script = """
+        function add3(a, b, c) {
+            return a + b + c;
+        }
+        let items = [10, 20, 30];
+        add3(...items) === 60;
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "syntax: call with spread passes unpacked array elements")
+    } catch {
+        check(false, "call spread error: \(error)")
+    }
+
+    // 14.5 Object spread
+    do {
+        let script = """
+        let p1 = { a: 1, b: 2 };
+        let p2 = { ...p1, c: 3, b: 20 };
+        (p2.a === 1) && (p2.b === 20) && (p2.c === 3);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "syntax: object literal spread copies own enumerable properties")
+    } catch {
+        check(false, "object spread error: \(error)")
+    }
+
+    // 14.6 Template literal interpolation
+    do {
+        let script = """
+        let name = "World";
+        let msg = `Hello, ${name}! Sum is ${5 * 8 + 2}.`;
+        msg === "Hello, World! Sum is 42.";
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "syntax: template literal evaluates and interpolates expressions")
+    } catch {
+        check(false, "template interpolation error: \(error)")
+    }
+}
+
+func testECMAScript2024To2026Builtins() {
+    let realm = js.Realm()
+
+    // 15.1 Promise.withResolvers (ECMAScript 2024)
+    do {
+        _ = try realm.Eval("""
+        var withResFired = 0;
+        let res = Promise.withResolvers();
+        res.promise.then(function(val) {
+            withResFired = val;
+        });
+        res.resolve(99);
+        """)
+        realm.RunJobs()
+        let res = try realm.Eval("withResFired === 99;")
+        check(res.ToBoolean(), "promise: Promise.withResolvers() produces promise and resolvers")
+    } catch {
+        check(false, "Promise.withResolvers error: \(error)")
+    }
+
+    // 15.2 Object.groupBy (ECMAScript 2024)
+    do {
+        let script = """
+        let inventory = [
+            { name: "asparagus", type: "vegetables" },
+            { name: "bananas", type: "fruit" },
+            { name: "goat", type: "meat" },
+            { name: "cherries", type: "fruit" },
+            { name: "fish", type: "meat" }
+        ];
+        let result = Object.groupBy(inventory, function(item) { return item.type; });
+        (result.fruit.length === 2) && (result.vegetables.length === 1) && (result.meat.length === 2);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "object: Object.groupBy groups elements by string keys")
+    } catch {
+        check(false, "Object.groupBy error: \(error)")
+    }
+
+    // 15.3 Object.entries, Object.fromEntries, Object.hasOwn
+    do {
+        let script = """
+        let entries = Object.entries({ a: 1, b: 2 });
+        let obj = Object.fromEntries(entries);
+        (obj.a === 1) && (obj.b === 2) && Object.hasOwn(obj, "a") && !Object.hasOwn(obj, "toString");
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "object: Object.entries, fromEntries, and hasOwn pass")
+    } catch {
+        check(false, "Object entries/hasOwn error: \(error)")
+    }
+
+    // 15.4 Map.groupBy (ECMAScript 2024)
+    do {
+        let script = """
+        let items = [1, 2, 3, 4, 5, 6];
+        let grouped = Map.groupBy(items, function(x) { return x % 2 === 0 ? "even" : "odd"; });
+        (grouped.get("even").length === 3) && (grouped.get("odd").length === 3);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "keyed: Map.groupBy groups elements into Map instance")
+    } catch {
+        check(false, "Map.groupBy error: \(error)")
+    }
+
+    // 15.5 ECMAScript 2025 Set methods (union, intersection, difference, symmetricDifference, isSubsetOf)
+    do {
+        let script = """
+        let s1 = new Set(); s1.add("a"); s1.add("b");
+        let s2 = new Set(); s2.add("b"); s2.add("c");
+        let u = s1.union(s2);
+        let inter = s1.intersection(s2);
+        let diff = s1.difference(s2);
+        let symm = s1.symmetricDifference(s2);
+        (u.size === 3) && (inter.size === 1) && inter.has("b") && (diff.size === 1) && diff.has("a") && (symm.size === 2) && symm.has("a") && symm.has("c") && s1.isSubsetOf(u);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "keyed: Set methods union, intersection, difference, symmetricDifference pass")
+    } catch {
+        check(false, "Set methods error: \(error)")
+    }
+
+    // 15.6 Change Array by Copy (ECMAScript 2023)
+    do {
+        let script = """
+        let original = [3, 1, 2];
+        let rev = original.toReversed();
+        let sorted = original.toSorted();
+        let spliced = original.toSpliced(1, 1, 99);
+        let replaced = original.with(0, 100);
+        (original[0] === 3) && (rev[0] === 2) && (sorted[0] === 1) && (spliced[1] === 99) && (replaced[0] === 100);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "indexed: toReversed, toSorted, toSpliced, and with Change Array by Copy")
+    } catch {
+        check(false, "Change Array by Copy error: \(error)")
+    }
+
+    // 15.7 Array findLast, findLastIndex, and at
+    do {
+        let script = """
+        let numbers = [5, 12, 50, 130, 44];
+        let lastBig = numbers.findLast(function(n) { return n > 45; });
+        let lastBigIdx = numbers.findLastIndex(function(n) { return n > 45; });
+        let lastEl = numbers.at(-1);
+        (lastBig === 130) && (lastBigIdx === 3) && (lastEl === 44);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "indexed: findLast, findLastIndex, and at search arrays correctly")
+    } catch {
+        check(false, "Array findLast/at error: \(error)")
+    }
+
+    // 15.8 Array.from, Array.of, and higher-order methods (map, filter, reduce)
+    do {
+        let script = """
+        let fromArr = Array.from("abc", function(ch) { return ch + "!"; });
+        let ofArr = Array.of(10, 20, 30);
+        let nums = [1, 2, 3, 4];
+        let doubled = nums.map(function(x) { return x * 2; });
+        let evens = nums.filter(function(x) { return x % 2 === 0; });
+        let sum = nums.reduce(function(acc, x) { return acc + x; }, 0);
+        (fromArr.join(",") === "a!,b!,c!") && (ofArr.length === 3) && (doubled[3] === 8) && (evens.length === 2) && (sum === 10);
+        """
+        let res = try realm.Eval(script)
+        check(res.ToBoolean(), "indexed: Array.from, of, map, filter, and reduce behave per specification")
+    } catch {
+        check(false, "Array higher order error: \(error)")
     }
 }
 

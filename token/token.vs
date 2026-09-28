@@ -1,5 +1,7 @@
 package token
 
+import "unicode"
+
 /// TokenKind represents the category of a lexical token in ECMAScript.
 public enum TokenKind: Equatable {
     case eof
@@ -84,6 +86,7 @@ public enum TokenKind: Equatable {
     case questionDot     // ?.
     case arrow           // =>
     case hash            // #
+    case privateName     // #name, Text is the name without the #
 
     // Assignment Operators
     case assign          // =
@@ -141,20 +144,44 @@ public enum TokenKind: Equatable {
     case dec             // --
 }
 
-/// Token is a scanned token with position and text.
-public struct Token: Equatable {
+/// Token is a scanned token with its position and, for literals, its value.
+public struct Token {
     public var Kind: TokenKind
+    /// Text is an identifier's or keyword's name (escapes resolved), a
+    /// number's or regular expression's source, or a punctuator.
     public var Text: string
+    /// Value is a string literal's or template part's cooked UTF-16 value.
+    public var Value: [uint16]
+    /// Raw is a template part's raw text, or a regular expression's flags.
+    public var Raw: string
+    public var Number: float64
     public var Pos: int
     public var EndPos: int
+    public var Line: int
     public var HasPrecedingLineBreak: bool
+    /// Escaped is set when an identifier or keyword was spelled with a
+    /// \u escape, which keeps it from being a keyword.
+    public var Escaped: bool
+    /// InvalidEscape is set on a template part whose cooked value is
+    /// undefined (allowed only in tagged templates).
+    public var InvalidEscape: bool
+    /// LegacyOctal is set on a number like 017 or a string with \07, which
+    /// strict mode forbids.
+    public var LegacyOctal: bool
 
     public init(Kind: TokenKind, Text: string = "", Pos: int = 0, EndPos: int = 0, HasPrecedingLineBreak: bool = false) {
         self.Kind = Kind
         self.Text = Text
+        self.Value = []
+        self.Raw = ""
+        self.Number = 0
         self.Pos = Pos
         self.EndPos = EndPos
+        self.Line = 1
         self.HasPrecedingLineBreak = HasPrecedingLineBreak
+        self.Escaped = false
+        self.InvalidEscape = false
+        self.LegacyOctal = false
     }
 
     public var IsAssignment: bool {
@@ -344,4 +371,50 @@ public final class SourceFile {
         let col = offset - lineStart + 1
         return Position(Filename: Filename, Line: lineIdx + 1, Column: col, Offset: offset)
     }
+}
+
+// MARK: lexical character classes (§12.2–§12.7)
+//
+// ECMAScript's own definitions, which differ from Unicode's properties at
+// the edges: WhiteSpace includes U+FEFF and not NEL, and identifiers take
+// $, _, ZWNJ and ZWJ besides ID_Start and ID_Continue.
+
+/// IsWhiteSpace is WhiteSpace (§12.2): TAB, VT, FF, SP, NBSP, ZWNBSP and
+/// the Zs category.
+public func IsWhiteSpace(_ c: uint32) -> bool {
+    switch c {
+    case 0x09, 0x0B, 0x0C, 0x20, 0xA0, 0xFEFF:
+        return true
+    default:
+        return c >= 0x80 && unicode.Category(c) == .spaceSeparator
+    }
+}
+
+/// IsLineTerminator is LineTerminator (§12.3): LF, CR, LS and PS.
+public func IsLineTerminator(_ c: uint32) -> bool {
+    return c == 0x0A || c == 0x0D || c == 0x2028 || c == 0x2029
+}
+
+/// IsSpace is StrWhiteSpaceChar (§7.1.4.1): WhiteSpace or LineTerminator,
+/// what String.prototype.trim removes and \s matches.
+public func IsSpace(_ c: uint32) -> bool {
+    return IsWhiteSpace(c) || IsLineTerminator(c)
+}
+
+/// IsIdentifierStart is IdentifierStartChar (§12.7): ID_Start, $ or _.
+public func IsIdentifierStart(_ c: uint32) -> bool {
+    return c == 0x24 || c == 0x5F || unicode.IsIDStart(c)
+}
+
+/// IsIdentifierPart is IdentifierPartChar (§12.7): ID_Continue, $, ZWNJ or ZWJ.
+public func IsIdentifierPart(_ c: uint32) -> bool {
+    return c == 0x24 || c == 0x200C || c == 0x200D || unicode.IsIDContinue(c)
+}
+
+/// HexValue is a HexDigit's value, or -1.
+public func HexValue(_ c: uint32) -> int {
+    if c >= 0x30 && c <= 0x39 { return int(c - 0x30) }
+    if c >= 0x61 && c <= 0x66 { return int(c - 0x61 + 10) }
+    if c >= 0x41 && c <= 0x46 { return int(c - 0x41 + 10) }
+    return -1
 }

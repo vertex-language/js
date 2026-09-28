@@ -66,7 +66,11 @@ struct Printer {
             for i in 0..<v.Declarations.count {
                 if i > 0 { output += ", " }
                 let d = v.Declarations[i]
-                output += d.Id
+                if let pat = d.Pattern {
+                    printPattern(pat)
+                } else {
+                    output += d.Id
+                }
                 if let initExpr = d.Init {
                     output += " = "
                     printExpr(initExpr)
@@ -80,7 +84,11 @@ struct Printer {
             output += "function "
             if f.IsGenerator { output += "* " }
             output += "\(f.Name)("
-            output += f.Params.joined(separator: ", ")
+            var pList = f.Params
+            if let rp = f.RestParam {
+                pList.append("..." + rp)
+            }
+            output += pList.joined(separator: ", ")
             output += ") {\n"
             indentLevel += 1
             for s in f.Body.Statements {
@@ -436,7 +444,10 @@ struct Printer {
             for i in 0..<o.Properties.count {
                 if i > 0 { output += ", " }
                 let p = o.Properties[i]
-                if p.Shorthand {
+                if p.IsSpread {
+                    output += "..."
+                    printExpr(p.Value)
+                } else if p.Shorthand {
                     printExpr(p.Key)
                 } else if p.Computed {
                     output += "["
@@ -456,7 +467,11 @@ struct Printer {
             output += "function"
             if let n = f.Id { output += " \(n)" }
             output += "("
-            output += f.Params.joined(separator: ", ")
+            var pList = f.Params
+            if let rp = f.RestParam {
+                pList.append("..." + rp)
+            }
+            output += pList.joined(separator: ", ")
             output += ") {\n"
             indentLevel += 1
             for s in f.Body.Statements {
@@ -468,10 +483,14 @@ struct Printer {
 
         case .arrow(let a):
             if a.IsAsync { output += "async " }
-            if a.Params.count == 1 {
-                output += a.Params[0]
+            var pList = a.Params
+            if let rp = a.RestParam {
+                pList.append("..." + rp)
+            }
+            if pList.count == 1 && a.RestParam == nil {
+                output += pList[0]
             } else {
-                output += "(\(a.Params.joined(separator: ", ")))"
+                output += "(\(pList.joined(separator: ", ")))"
             }
             output += " => "
             if let bStmt = a.BodyStmt {
@@ -497,10 +516,19 @@ struct Printer {
 
         case .template(let t):
             output += "`"
-            for q in t.Quasis {
-                output += q
+            for i in 0..<t.Quasis.count {
+                output += t.Quasis[i]
+                if i < t.Expressions.count {
+                    output += "${"
+                    printExpr(t.Expressions[i])
+                    output += "}"
+                }
             }
             output += "`"
+
+        case .spread(let s):
+            output += "..."
+            printExpr(s.Argument)
 
         case .classExpr(let c):
             output += "class"
@@ -523,7 +551,11 @@ struct Printer {
                 } else {
                     printExpr(el.Key)
                 }
-                output += "(\(el.Value.Params.joined(separator: ", "))) {\n"
+                var pList = el.Value.Params
+                if let rp = el.Value.RestParam {
+                    pList.append("..." + rp)
+                }
+                output += "(\(pList.joined(separator: ", "))) {\n"
                 indentLevel += 1
                 for s in el.Value.Body.Statements {
                     printStmt(s)
@@ -538,6 +570,79 @@ struct Printer {
 
         case .superExpr:
             output += "super"
+
+        case .pattern(let p):
+            printPattern(p)
+
+        case .awaitExpr(let a):
+            output += "await "
+            printExpr(a.Argument)
+
+        case .yieldExpr(let y):
+            output += "yield"
+            if y.Delegate { output += "*" }
+            if let arg = y.Argument {
+                output += " "
+                printExpr(arg)
+            }
+        }
+    }
+
+    mutating func printDestructureTarget(_ target: ast.DestructureTarget) {
+        switch target {
+        case .identifier(let name):
+            output += name
+        case .member(let m):
+            printExpr(.member(m))
+        case .pattern(let p):
+            printPattern(p)
+        }
+    }
+
+    mutating func printPattern(_ p: ast.BindingPattern) {
+        switch p {
+        case .array(let arr):
+            output += "["
+            for i in 0..<arr.Elements.count {
+                if i > 0 { output += ", " }
+                let el = arr.Elements[i]
+                if el.IsSpread { output += "..." }
+                if let t = el.Target {
+                    printDestructureTarget(t)
+                }
+                if let def = el.DefaultValue {
+                    output += " = "
+                    printExpr(def)
+                }
+            }
+            output += "]"
+        case .object(let obj):
+            output += "{"
+            for i in 0..<obj.Properties.count {
+                if i > 0 { output += ", " }
+                let prop = obj.Properties[i]
+                if prop.IsSpread {
+                    output += "..."
+                    printDestructureTarget(prop.Target)
+                } else {
+                    if let comp = prop.ComputedKey {
+                        output += "["
+                        printExpr(comp)
+                        output += "]: "
+                        printDestructureTarget(prop.Target)
+                    } else if case .identifier(let name) = prop.Target, name == prop.Key {
+                        output += prop.Key
+                    } else {
+                        output += prop.Key + ": "
+                        printDestructureTarget(prop.Target)
+                    }
+                    if let def = prop.DefaultValue {
+                        output += " = "
+                        printExpr(def)
+                    }
+                }
+            }
+            output += "}"
         }
     }
 

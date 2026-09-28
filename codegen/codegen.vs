@@ -116,7 +116,17 @@ final class Compiler {
 
         case .varDecl(let v):
             for d in v.Declarations {
-                if let initExpr = d.Init {
+                if let pat = d.Pattern {
+                    if let initExpr = d.Init {
+                        try compileExpr(initExpr)
+                    } else {
+                        _ = emit(bytecode.Instruction(op: .ldaUndefined))
+                    }
+                    let srcReg = allocateRegister()
+                    _ = emit(bytecode.Instruction(op: .star, r0: srcReg))
+                    try compileDestructuring(pattern: pat, srcReg: srcReg)
+                    freeRegister(srcReg)
+                } else if let initExpr = d.Init {
                     try compileExpr(initExpr)
                     if currentScope.Kind == .global {
                         let constIdx = addStringConstant(d.Id)
@@ -141,7 +151,10 @@ final class Compiler {
                 fnScope = currentScope
             }
             let fnCompiler = Compiler(currentScope: fnScope, name: f.Name)
-            fnCompiler.fn.ParameterCount = f.Params.count
+            fnCompiler.fn.ParameterCount = f.Params.count + (f.RestParam != nil ? 1 : 0)
+            fnCompiler.fn.HasRestParameter = f.RestParam != nil
+            fnCompiler.fn.IsAsync = f.IsAsync
+            fnCompiler.fn.IsGenerator = f.IsGenerator
             for stmt in f.Body.Statements {
                 try fnCompiler.compileStmt(stmt)
             }
@@ -308,8 +321,65 @@ final class Compiler {
         case .classDecl(let c):
             try compileClass(name: c.Name, superClass: c.SuperClass, elements: c.Elements, isExpr: false)
 
-        case .forInStmt, .forOfStmt:
+        case .forInStmt:
             break
+
+        case .forOfStmt(let fo):
+            try compileExpr(fo.Right)
+            let arrReg = allocateRegister()
+            _ = emit(bytecode.Instruction(op: .star, r0: arrReg))
+
+            _ = emit(bytecode.Instruction(op: .ldaZero))
+            let idxReg = allocateRegister()
+            _ = emit(bytecode.Instruction(op: .star, r0: idxReg))
+
+            let loopStart = fn.Instructions.count
+            let lenConst = addStringConstant("length")
+            _ = emit(bytecode.Instruction(op: .ldaNamedProperty, r0: arrReg, imm: lenConst))
+            _ = emit(bytecode.Instruction(op: .testLessThan, r0: idxReg))
+            let exitJump = emit(bytecode.Instruction(op: .jumpIfFalse))
+
+            _ = emit(bytecode.Instruction(op: .ldar, r0: idxReg))
+            _ = emit(bytecode.Instruction(op: .ldaKeyedProperty, r0: arrReg))
+
+            if let lv = fo.LeftVar, !lv.Declarations.isEmpty {
+                let d = lv.Declarations[0]
+                if let pat = d.Pattern {
+                    let elemReg = allocateRegister()
+                    _ = emit(bytecode.Instruction(op: .star, r0: elemReg))
+                    try compileDestructuring(pattern: pat, srcReg: elemReg)
+                    freeRegister(elemReg)
+                } else {
+                    if currentScope.Kind == .global {
+                        let constIdx = addStringConstant(d.Id)
+                        _ = emit(bytecode.Instruction(op: .staGlobal, imm: constIdx))
+                    }
+                    if let binding = currentScope.LookupInCurrentFunction(d.Id) {
+                        let reg = int32(binding.Slot)
+                        _ = emit(bytecode.Instruction(op: .star, r0: reg))
+                    } else {
+                        let constIdx = addStringConstant(d.Id)
+                        _ = emit(bytecode.Instruction(op: .staGlobal, imm: constIdx))
+                    }
+                }
+            }
+
+            try compileStmt(fo.Body)
+
+            let oneConst = addNumberConstant(1.0)
+            let oneReg = allocateRegister()
+            _ = emit(bytecode.Instruction(op: .ldaConstant, imm: oneConst))
+            _ = emit(bytecode.Instruction(op: .star, r0: oneReg))
+            _ = emit(bytecode.Instruction(op: .ldar, r0: idxReg))
+            _ = emit(bytecode.Instruction(op: .add, r0: oneReg))
+            _ = emit(bytecode.Instruction(op: .star, r0: idxReg))
+            freeRegister(oneReg)
+
+            _ = emit(bytecode.Instruction(op: .jump, offset: int32(loopStart - fn.Instructions.count)))
+            patchJump(exitJump)
+
+            freeRegister(idxReg)
+            freeRegister(arrReg)
         }
     }
 
@@ -452,7 +522,13 @@ final class Compiler {
         case .assign(let a):
             if a.Op == .assign {
                 try compileExpr(a.Right)
-                if case .identifier(let id) = a.Left {
+                if case .pattern(let pat) = a.Left {
+                    let srcReg = allocateRegister()
+                    _ = emit(bytecode.Instruction(op: .star, r0: srcReg))
+                    try compileDestructuring(pattern: pat, srcReg: srcReg)
+                    _ = emit(bytecode.Instruction(op: .ldar, r0: srcReg))
+                    freeRegister(srcReg)
+                } else if case .identifier(let id) = a.Left {
                     if currentScope.Kind == .global {
                         let constIdx = addStringConstant(id.Name)
                         _ = emit(bytecode.Instruction(op: .staGlobal, imm: constIdx))
@@ -614,17 +690,38 @@ final class Compiler {
                     _ = emit(bytecode.Instruction(op: .ldar, r0: 0)) // receiver 'this'
                     _ = emit(bytecode.Instruction(op: .star, r0: receiverReg))
 
-                    var argRegs: [int32] = []
-                    for arg in c.Arguments {
-                        try compileExpr(arg)
-                        let aReg = allocateRegister()
-                        _ = emit(bytecode.Instruction(op: .star, r0: aReg))
-                        argRegs.append(aReg)
+                    var hasSpread = false
+                    for a in c.Arguments {
+                        if case .spread = a { hasSpread = true; break }
                     }
-                    let firstArg = argRegs.isEmpty ? 0 : argRegs[0]
-                    _ = emit(bytecode.Instruction(op: .call, r0: calleeReg, r1: receiverReg, r2: firstArg, imm: int32(argRegs.count)))
-                    for ar in argRegs.reversed() {
-                        freeRegister(ar)
+                    if hasSpread {
+                        _ = emit(bytecode.Instruction(op: .createArrayLiteral, imm: 0))
+                        let arrReg = allocateRegister()
+                        _ = emit(bytecode.Instruction(op: .star, r0: arrReg))
+                        for arg in c.Arguments {
+                            if case .spread(let s) = arg {
+                                try compileExpr(s.Argument)
+                                _ = emit(bytecode.Instruction(op: .spreadIntoArray, r0: arrReg))
+                            } else {
+                                try compileExpr(arg)
+                                _ = emit(bytecode.Instruction(op: .appendArrayElement, r0: arrReg))
+                            }
+                        }
+                        _ = emit(bytecode.Instruction(op: .callWithSpread, r0: calleeReg, r1: receiverReg, r2: arrReg))
+                        freeRegister(arrReg)
+                    } else {
+                        var argRegs: [int32] = []
+                        for arg in c.Arguments {
+                            try compileExpr(arg)
+                            let aReg = allocateRegister()
+                            _ = emit(bytecode.Instruction(op: .star, r0: aReg))
+                            argRegs.append(aReg)
+                        }
+                        let firstArg = argRegs.isEmpty ? 0 : argRegs[0]
+                        _ = emit(bytecode.Instruction(op: .call, r0: calleeReg, r1: receiverReg, r2: firstArg, imm: int32(argRegs.count)))
+                        for ar in argRegs.reversed() {
+                            freeRegister(ar)
+                        }
                     }
                     freeRegister(receiverReg)
                     freeRegister(calleeReg)
@@ -653,34 +750,58 @@ final class Compiler {
                 _ = emit(bytecode.Instruction(op: .star, r0: receiverReg))
             }
 
-            var argRegs: [int32] = []
-            for arg in c.Arguments {
-                try compileExpr(arg)
-                let aReg = allocateRegister()
-                _ = emit(bytecode.Instruction(op: .star, r0: aReg))
-                argRegs.append(aReg)
+            var hasSpread = false
+            for a in c.Arguments {
+                if case .spread = a { hasSpread = true; break }
             }
-            let firstArg = argRegs.isEmpty ? 0 : argRegs[0]
-            _ = emit(bytecode.Instruction(op: .call, r0: calleeReg, r1: receiverReg, r2: firstArg, imm: int32(argRegs.count)))
-            for ar in argRegs.reversed() {
-                freeRegister(ar)
+            if hasSpread {
+                _ = emit(bytecode.Instruction(op: .createArrayLiteral, imm: 0))
+                let arrReg = allocateRegister()
+                _ = emit(bytecode.Instruction(op: .star, r0: arrReg))
+                for arg in c.Arguments {
+                    if case .spread(let s) = arg {
+                        try compileExpr(s.Argument)
+                        _ = emit(bytecode.Instruction(op: .spreadIntoArray, r0: arrReg))
+                    } else {
+                        try compileExpr(arg)
+                        _ = emit(bytecode.Instruction(op: .appendArrayElement, r0: arrReg))
+                    }
+                }
+                _ = emit(bytecode.Instruction(op: .callWithSpread, r0: calleeReg, r1: receiverReg, r2: arrReg))
+                freeRegister(arrReg)
+            } else {
+                var argRegs: [int32] = []
+                for arg in c.Arguments {
+                    try compileExpr(arg)
+                    let aReg = allocateRegister()
+                    _ = emit(bytecode.Instruction(op: .star, r0: aReg))
+                    argRegs.append(aReg)
+                }
+                let firstArg = argRegs.isEmpty ? 0 : argRegs[0]
+                _ = emit(bytecode.Instruction(op: .call, r0: calleeReg, r1: receiverReg, r2: firstArg, imm: int32(argRegs.count)))
+                for ar in argRegs.reversed() {
+                    freeRegister(ar)
+                }
             }
             freeRegister(receiverReg)
             freeRegister(calleeReg)
 
         case .array(let a):
-            _ = emit(bytecode.Instruction(op: .createArrayLiteral, imm: int32(a.Elements.count)))
+            _ = emit(bytecode.Instruction(op: .createArrayLiteral, imm: 0))
             let arrReg = allocateRegister()
             _ = emit(bytecode.Instruction(op: .star, r0: arrReg))
-            for idx in 0..<a.Elements.count {
-                if let elem = a.Elements[idx] {
-                    let keyIdx = addNumberConstant(float64(idx))
-                    let keyReg = allocateRegister()
-                    _ = emit(bytecode.Instruction(op: .ldaConstant, imm: keyIdx))
-                    _ = emit(bytecode.Instruction(op: .star, r0: keyReg))
-                    try compileExpr(elem)
-                    _ = emit(bytecode.Instruction(op: .staKeyedProperty, r0: arrReg, r1: keyReg))
-                    freeRegister(keyReg)
+            for elemOpt in a.Elements {
+                if let elem = elemOpt {
+                    if case .spread(let s) = elem {
+                        try compileExpr(s.Argument)
+                        _ = emit(bytecode.Instruction(op: .spreadIntoArray, r0: arrReg))
+                    } else {
+                        try compileExpr(elem)
+                        _ = emit(bytecode.Instruction(op: .appendArrayElement, r0: arrReg))
+                    }
+                } else {
+                    _ = emit(bytecode.Instruction(op: .ldaUndefined))
+                    _ = emit(bytecode.Instruction(op: .appendArrayElement, r0: arrReg))
                 }
             }
             _ = emit(bytecode.Instruction(op: .ldar, r0: arrReg))
@@ -691,7 +812,10 @@ final class Compiler {
             let objReg = allocateRegister()
             _ = emit(bytecode.Instruction(op: .star, r0: objReg))
             for prop in o.Properties {
-                if prop.Computed {
+                if prop.IsSpread {
+                    try compileExpr(prop.Value)
+                    _ = emit(bytecode.Instruction(op: .spreadIntoObject, r0: objReg))
+                } else if prop.Computed {
                     try compileExpr(prop.Key)
                     let keyReg = allocateRegister()
                     _ = emit(bytecode.Instruction(op: .star, r0: keyReg))
@@ -720,7 +844,10 @@ final class Compiler {
                 fnScope = currentScope
             }
             let fnCompiler = Compiler(currentScope: fnScope, name: f.Id ?? "")
-            fnCompiler.fn.ParameterCount = f.Params.count
+            fnCompiler.fn.ParameterCount = f.Params.count + (f.RestParam != nil ? 1 : 0)
+            fnCompiler.fn.HasRestParameter = f.RestParam != nil
+            fnCompiler.fn.IsAsync = f.IsAsync
+            fnCompiler.fn.IsGenerator = f.IsGenerator
             for stmt in f.Body.Statements {
                 try fnCompiler.compileStmt(stmt)
             }
@@ -740,7 +867,9 @@ final class Compiler {
                 fnScope = currentScope
             }
             let fnCompiler = Compiler(currentScope: fnScope, name: "arrow")
-            fnCompiler.fn.ParameterCount = a.Params.count
+            fnCompiler.fn.ParameterCount = a.Params.count + (a.RestParam != nil ? 1 : 0)
+            fnCompiler.fn.HasRestParameter = a.RestParam != nil
+            fnCompiler.fn.IsAsync = a.IsAsync
             if let bStmt = a.BodyStmt {
                 for s in bStmt.Statements {
                     try fnCompiler.compileStmt(s)
@@ -761,11 +890,27 @@ final class Compiler {
             }
 
         case .template(let t):
-            if !t.Quasis.isEmpty {
-                let constIdx = addStringConstant(t.Quasis[0])
-                _ = emit(bytecode.Instruction(op: .ldaConstant, imm: constIdx))
-            } else {
+            if t.Quasis.isEmpty {
                 _ = emit(bytecode.Instruction(op: .ldaUndefined))
+            } else {
+                let firstIdx = addStringConstant(t.Quasis[0])
+                _ = emit(bytecode.Instruction(op: .ldaConstant, imm: firstIdx))
+                for i in 0..<t.Expressions.count {
+                    let accReg = allocateRegister()
+                    _ = emit(bytecode.Instruction(op: .star, r0: accReg))
+                    try compileExpr(t.Expressions[i])
+                    _ = emit(bytecode.Instruction(op: .add, r0: accReg))
+                    freeRegister(accReg)
+
+                    if (i + 1) < t.Quasis.count {
+                        let nextAcc = allocateRegister()
+                        _ = emit(bytecode.Instruction(op: .star, r0: nextAcc))
+                        let qIdx = addStringConstant(t.Quasis[i + 1])
+                        _ = emit(bytecode.Instruction(op: .ldaConstant, imm: qIdx))
+                        _ = emit(bytecode.Instruction(op: .add, r0: nextAcc))
+                        freeRegister(nextAcc)
+                    }
+                }
             }
 
         case .newExpr(let n):
@@ -797,6 +942,24 @@ final class Compiler {
 
         case .superExpr:
             _ = emit(bytecode.Instruction(op: .ldaUndefined))
+
+        case .spread(let s):
+            try compileExpr(s.Argument)
+
+        case .pattern:
+            break
+
+        case .awaitExpr(let a):
+            try compileExpr(a.Argument)
+            _ = emit(bytecode.Instruction(op: .awaitOp))
+
+        case .yieldExpr(let y):
+            if let arg = y.Argument {
+                try compileExpr(arg)
+            } else {
+                _ = emit(bytecode.Instruction(op: .ldaUndefined))
+            }
+            _ = emit(bytecode.Instruction(op: .yieldOp, imm: y.Delegate ? 1 : 0))
         }
     }
 
@@ -821,12 +984,15 @@ final class Compiler {
         }
 
         let ctorParams: [string]
+        let ctorRestParam: string?
         let ctorBody: ast.BlockStmt
         if let el = ctorElement {
             ctorParams = el.Value.Params
+            ctorRestParam = el.Value.RestParam
             ctorBody = el.Value.Body
         } else {
             ctorParams = []
+            ctorRestParam = nil
             if superExpr != nil {
                 ctorBody = ast.BlockStmt(statements: [
                     ast.Stmt.expr(ast.ExprStmt(ast.Expr.call(ast.CallExpr(callee: .superExpr(ast.SuperExpr()), arguments: []))))
@@ -847,7 +1013,8 @@ final class Compiler {
         let ctorCompiler = Compiler(currentScope: ctorScope, name: name ?? "")
         ctorCompiler.currentSuperExpr = superExpr
         ctorCompiler.isStaticMethod = false
-        ctorCompiler.fn.ParameterCount = ctorParams.count
+        ctorCompiler.fn.ParameterCount = ctorParams.count + (ctorRestParam != nil ? 1 : 0)
+        ctorCompiler.fn.HasRestParameter = ctorRestParam != nil
         for s in ctorBody.Statements {
             try ctorCompiler.compileStmt(s)
         }
@@ -899,7 +1066,10 @@ final class Compiler {
             let mCompiler = Compiler(currentScope: mScope, name: methodName)
             mCompiler.currentSuperExpr = superExpr
             mCompiler.isStaticMethod = el.IsStatic
-            mCompiler.fn.ParameterCount = el.Value.Params.count
+            mCompiler.fn.ParameterCount = el.Value.Params.count + (el.Value.RestParam != nil ? 1 : 0)
+            mCompiler.fn.HasRestParameter = el.Value.RestParam != nil
+            mCompiler.fn.IsAsync = el.Value.IsAsync
+            mCompiler.fn.IsGenerator = el.Value.IsGenerator
             for s in el.Value.Body.Statements {
                 try mCompiler.compileStmt(s)
             }
@@ -950,6 +1120,109 @@ final class Compiler {
         } else {
             _ = emit(bytecode.Instruction(op: .ldar, r0: ctorReg))
             freeRegister(ctorReg)
+        }
+    }
+
+    func compileDestructuring(pattern: ast.BindingPattern, srcReg: int32) throws {
+        switch pattern {
+        case .array(let arr):
+            try compileArrayPattern(arr, srcReg: srcReg)
+        case .object(let obj):
+            try compileObjectPattern(obj, srcReg: srcReg)
+        }
+    }
+
+    func compileArrayPattern(_ arr: ast.ArrayPattern, srcReg: int32) throws {
+        for i in 0..<arr.Elements.count {
+            let el = arr.Elements[i]
+            guard let target = el.Target else { continue }
+            if el.IsSpread {
+                _ = emit(bytecode.Instruction(op: .sliceArrayFrom, r0: srcReg, imm: int32(i)))
+                try compileDestructureTarget(target: target, defaultExpr: el.DefaultValue)
+                break
+            }
+            _ = emit(bytecode.Instruction(op: .ldaInt32, imm: int32(i)))
+            _ = emit(bytecode.Instruction(op: .ldaKeyedProperty, r0: srcReg))
+            try compileDestructureTarget(target: target, defaultExpr: el.DefaultValue)
+        }
+    }
+
+    func compileObjectPattern(_ obj: ast.ObjectPattern, srcReg: int32) throws {
+        var extractedKeys: [string] = []
+        for prop in obj.Properties {
+            if prop.IsSpread {
+                let restReg = allocateRegister()
+                _ = emit(bytecode.Instruction(op: .createObjectLiteral))
+                _ = emit(bytecode.Instruction(op: .star, r0: restReg))
+                _ = emit(bytecode.Instruction(op: .ldar, r0: srcReg))
+                _ = emit(bytecode.Instruction(op: .spreadIntoObject, r0: restReg))
+                for k in extractedKeys {
+                    let kIdx = addStringConstant(k)
+                    _ = emit(bytecode.Instruction(op: .deleteNamedProperty, r0: restReg, imm: kIdx))
+                }
+                _ = emit(bytecode.Instruction(op: .ldar, r0: restReg))
+                freeRegister(restReg)
+                try compileDestructureTarget(target: prop.Target, defaultExpr: prop.DefaultValue)
+                break
+            }
+
+            extractedKeys.append(prop.Key)
+            if let comp = prop.ComputedKey {
+                try compileExpr(comp)
+                _ = emit(bytecode.Instruction(op: .ldaKeyedProperty, r0: srcReg))
+            } else {
+                let constIdx = addStringConstant(prop.Key)
+                _ = emit(bytecode.Instruction(op: .ldaNamedProperty, r0: srcReg, imm: constIdx))
+            }
+            try compileDestructureTarget(target: prop.Target, defaultExpr: prop.DefaultValue)
+        }
+    }
+
+    func compileDestructureTarget(target: ast.DestructureTarget, defaultExpr: ast.Expr?) throws {
+        if let def = defaultExpr {
+            let skipDef = emit(bytecode.Instruction(op: .jumpIfNotUndefined))
+            try compileExpr(def)
+            patchJump(skipDef)
+        }
+        switch target {
+        case .identifier(let name):
+            if currentScope.Kind == .global {
+                let constIdx = addStringConstant(name)
+                _ = emit(bytecode.Instruction(op: .staGlobal, imm: constIdx))
+            }
+            if let b = currentScope.LookupInCurrentFunction(name) {
+                let reg = int32(b.Slot)
+                _ = emit(bytecode.Instruction(op: .star, r0: reg))
+            } else {
+                let constIdx = addStringConstant(name)
+                _ = emit(bytecode.Instruction(op: .staGlobal, imm: constIdx))
+            }
+        case .member(let m):
+            let valReg = allocateRegister()
+            _ = emit(bytecode.Instruction(op: .star, r0: valReg))
+            try compileExpr(m.Object)
+            let objReg = allocateRegister()
+            _ = emit(bytecode.Instruction(op: .star, r0: objReg))
+            if m.Computed {
+                try compileExpr(m.Property)
+                let keyReg = allocateRegister()
+                _ = emit(bytecode.Instruction(op: .star, r0: keyReg))
+                _ = emit(bytecode.Instruction(op: .ldar, r0: valReg))
+                _ = emit(bytecode.Instruction(op: .staKeyedProperty, r0: objReg, r1: keyReg))
+                freeRegister(keyReg)
+            } else if case .identifier(let propId) = m.Property {
+                let constIdx = addStringConstant(propId.Name)
+                _ = emit(bytecode.Instruction(op: .ldar, r0: valReg))
+                _ = emit(bytecode.Instruction(op: .staNamedProperty, r0: objReg, imm: constIdx))
+            }
+            freeRegister(objReg)
+            _ = emit(bytecode.Instruction(op: .ldar, r0: valReg))
+            freeRegister(valReg)
+        case .pattern(let subPat):
+            let subReg = allocateRegister()
+            _ = emit(bytecode.Instruction(op: .star, r0: subReg))
+            try compileDestructuring(pattern: subPat, srcReg: subReg)
+            freeRegister(subReg)
         }
     }
 }

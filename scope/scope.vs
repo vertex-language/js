@@ -148,10 +148,21 @@ final class ScopeAnalyzer {
             let targetScope = isLexical ? currentScope : findVarScope(currentScope)
             let bKind: BindingKind = v.Kind == "let" ? .letKind : (v.Kind == "const" ? .constKind : .varKind)
             for d in v.Declarations {
-                if isLexical && targetScope.LookupLocal(d.Id) != nil {
-                    throw ScopeError.error(message: "identifier '\(d.Id)' has already been declared", pos: d.Pos)
+                if let pat = d.Pattern {
+                    let names = collectPatternNames(pat)
+                    for name in names {
+                        if isLexical && targetScope.LookupLocal(name) != nil {
+                            throw ScopeError.error(message: "identifier '\(name)' has already been declared", pos: d.Pos)
+                        }
+                        _ = targetScope.Declare(name, kind: bKind, pos: d.Pos)
+                    }
+                    try walkPattern(pat)
+                } else {
+                    if isLexical && targetScope.LookupLocal(d.Id) != nil {
+                        throw ScopeError.error(message: "identifier '\(d.Id)' has already been declared", pos: d.Pos)
+                    }
+                    _ = targetScope.Declare(d.Id, kind: bKind, pos: d.Pos)
                 }
-                _ = targetScope.Declare(d.Id, kind: bKind, pos: d.Pos)
                 if let initExpr = d.Init {
                     try walkExpr(initExpr)
                 }
@@ -164,6 +175,9 @@ final class ScopeAnalyzer {
             currentScope.Children.append(fnScope)
             for p in f.Params {
                 _ = fnScope.Declare(p, kind: .paramKind, pos: f.Pos)
+            }
+            if let rp = f.RestParam {
+                _ = fnScope.Declare(rp, kind: .paramKind, pos: f.Pos)
             }
             let prev = currentScope
             currentScope = fnScope
@@ -335,6 +349,9 @@ final class ScopeAnalyzer {
             for p in f.Params {
                 _ = fnScope.Declare(p, kind: .paramKind, pos: f.Pos)
             }
+            if let rp = f.RestParam {
+                _ = fnScope.Declare(rp, kind: .paramKind, pos: f.Pos)
+            }
             let prev = currentScope
             currentScope = fnScope
             for item in f.Body.Statements {
@@ -346,6 +363,9 @@ final class ScopeAnalyzer {
             currentScope.Children.append(arrowScope)
             for p in a.Params {
                 _ = arrowScope.Declare(p, kind: .paramKind, pos: a.Pos)
+            }
+            if let rp = a.RestParam {
+                _ = arrowScope.Declare(rp, kind: .paramKind, pos: a.Pos)
             }
             let prev = currentScope
             currentScope = arrowScope
@@ -365,6 +385,8 @@ final class ScopeAnalyzer {
             for ex in t.Expressions {
                 try walkExpr(ex)
             }
+        case .spread(let s):
+            try walkExpr(s.Argument)
         case .classExpr(let c):
             if let sc = c.SuperClass {
                 try walkExpr(sc)
@@ -375,10 +397,86 @@ final class ScopeAnalyzer {
             for el in c.Elements where el.Kind != .constructor {
                 try walkExpr(.function(el.Value))
             }
-        case .superExpr:
+        case .pattern(let p):
+            try walkPattern(p)
+        case .awaitExpr(let a):
+            try walkExpr(a.Argument)
+        case .yieldExpr(let y):
+            if let arg = y.Argument {
+                try walkExpr(arg)
+            }
+        case .number, .string, .boolean, .nullLit, .undefinedLit, .thisExpr, .superExpr:
             break
-        case .number, .string, .boolean, .nullLit, .undefinedLit, .thisExpr:
-            break
+        }
+    }
+
+    func collectBindingNames(_ target: ast.DestructureTarget) -> [string] {
+        switch target {
+        case .identifier(let name):
+            return [name]
+        case .member:
+            return []
+        case .pattern(let p):
+            return collectPatternNames(p)
+        }
+    }
+
+    func collectPatternNames(_ p: ast.BindingPattern) -> [string] {
+        var names: [string] = []
+        switch p {
+        case .array(let arr):
+            for el in arr.Elements {
+                if let t = el.Target {
+                    names.append(contentsOf: collectBindingNames(t))
+                }
+            }
+        case .object(let obj):
+            for prop in obj.Properties {
+                names.append(contentsOf: collectBindingNames(prop.Target))
+            }
+        }
+        return names
+    }
+
+    func walkDestructureTarget(_ target: ast.DestructureTarget) throws {
+        switch target {
+        case .identifier(let name):
+            if let b = currentScope.Lookup(name) {
+                if isCapturedFromOuterFunction(binding: b, current: currentScope) {
+                    b.IsCaptured = true
+                }
+            }
+        case .member(let m):
+            try walkExpr(m.Object)
+            if m.Computed {
+                try walkExpr(m.Property)
+            }
+        case .pattern(let p):
+            try walkPattern(p)
+        }
+    }
+
+    func walkPattern(_ p: ast.BindingPattern) throws {
+        switch p {
+        case .array(let arr):
+            for el in arr.Elements {
+                if let def = el.DefaultValue {
+                    try walkExpr(def)
+                }
+                if let t = el.Target {
+                    try walkDestructureTarget(t)
+                }
+            }
+        case .object(let obj):
+            for prop in obj.Properties {
+                if let comp = prop.ComputedKey {
+                    try walkExpr(comp)
+                }
+                if let def = prop.DefaultValue {
+                    try walkExpr(def)
+                }
+                try walkDestructureTarget(prop.Target)
+            }
         }
     }
 

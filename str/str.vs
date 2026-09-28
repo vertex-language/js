@@ -1,167 +1,244 @@
+// Package str is ECMAScript's String type: a sequence of UTF-16 code
+// units (ECMA-262 §6.1.4).
+//
+// Concatenation builds a rope, so a loop that appends to a string costs
+// linear time; the rope is flattened the first time its units are read.
 package str
 
-/// JSString implements ECMAScript UTF-16 strings with Latin-1 and two-byte storage.
-public final class JSString: Equatable, CustomStringConvertible {
-    public let IsLatin1: bool
-    let latin1Bytes: [uint8]
-    let utf16Units: [uint16]
+import (
+    "unicode/utf16"
+)
+
+/// JSString is an immutable string of UTF-16 code units.
+public final class JSString: Hashable, CustomStringConvertible {
+    var flat: [uint16]
+    var left: JSString?
+    var right: JSString?
+    var isFlat: bool
     public let Length: int
+    var hashCache: int = 0
+    var hashed: bool = false
+    var utf8: string? = nil
 
-    public init(latin1: [uint8]) {
-        self.IsLatin1 = true
-        self.latin1Bytes = latin1
-        self.utf16Units = []
-        self.Length = latin1.count
+    public init(_ units: [uint16]) {
+        self.flat = units
+        self.left = nil
+        self.right = nil
+        self.isFlat = true
+        self.Length = units.count
     }
 
-    public init(utf16: [uint16]) {
-        self.IsLatin1 = false
-        self.latin1Bytes = []
-        self.utf16Units = utf16
-        self.Length = utf16.count
+    init(left: JSString, right: JSString) {
+        self.flat = []
+        self.left = left
+        self.right = right
+        self.isFlat = false
+        self.Length = left.Length + right.Length
     }
 
-    /// FromUTF8 creates a JSString from a Vertex UTF-8 string.
-    public static func FromUTF8(_ text: string) -> JSString {
-        var u16: [uint16] = []
-        for s in text.unicodeScalars {
-            let v = s.value
-            if v < 0x10000 {
-                u16.append(uint16(v))
+    /// From makes a JSString from a UTF-8 string.
+    public static func From(_ s: string) -> JSString {
+        let j = JSString(utf16.Encode(s))
+        j.utf8 = s
+        return j
+    }
+
+    public static let Empty = JSString([])
+
+    /// Units are the code units, flattening a rope.
+    public var Units: [uint16] {
+        if !isFlat { flatten() }
+        return flat
+    }
+
+    func flatten() {
+        var out: [uint16] = []
+        out.reserveCapacity(Length)
+        // Walk the rope without recursion: ropes built in a loop are deep.
+        var stack: [JSString] = [self]
+        while !stack.isEmpty {
+            let n = stack.removeLast()
+            if n.isFlat {
+                out.append(contentsOf: n.flat)
             } else {
-                let shifted = v - 0x10000
-                u16.append(uint16(0xD800 + (shifted >> 10)))
-                u16.append(uint16(0xDC00 + (shifted & 0x3FF)))
+                stack.append(n.right!)
+                stack.append(n.left!)
             }
         }
-        var fitsLatin1 = true
-        for u in u16 {
-            if u > 0xFF {
-                fitsLatin1 = false
-                break
-            }
-        }
-        if fitsLatin1 {
-            var b: [uint8] = []
-            for u in u16 {
-                b.append(uint8(u))
-            }
-            return JSString(latin1: b)
-        }
-        return JSString(utf16: u16)
+        flat = out
+        isFlat = true
+        left = nil
+        right = nil
     }
 
-    /// ToUTF8 converts the JSString to a Vertex UTF-8 string.
-    public func ToUTF8() -> string {
-        var utf8Bytes: [uint8] = []
-        var i = 0
-        while i < Length {
-            let cp = CodePointAt(i)
-            if cp >= 0x10000 {
-                i += 2
-            } else {
-                i += 1
-            }
-            if cp <= 0x7F {
-                utf8Bytes.append(uint8(cp))
-            } else if cp <= 0x7FF {
-                utf8Bytes.append(uint8(0xC0 | (cp >> 6)))
-                utf8Bytes.append(uint8(0x80 | (cp & 0x3F)))
-            } else if cp <= 0xFFFF {
-                utf8Bytes.append(uint8(0xE0 | (cp >> 12)))
-                utf8Bytes.append(uint8(0x80 | ((cp >> 6) & 0x3F)))
-                utf8Bytes.append(uint8(0x80 | (cp & 0x3F)))
-            } else {
-                utf8Bytes.append(uint8(0xF0 | (cp >> 18)))
-                utf8Bytes.append(uint8(0x80 | ((cp >> 12) & 0x3F)))
-                utf8Bytes.append(uint8(0x80 | ((cp >> 6) & 0x3F)))
-                utf8Bytes.append(uint8(0x80 | (cp & 0x3F)))
-            }
-        }
-        return String(decoding: utf8Bytes, as: UTF8.self)
+    public var IsEmpty: bool { return Length == 0 }
+
+    /// At is the code unit at i, which must be in range.
+    public func At(_ i: int) -> uint16 {
+        if !isFlat { flatten() }
+        return flat[i]
     }
 
-    /// CharCodeAt returns the 16-bit code unit at index.
-    public func CharCodeAt(_ index: int) -> uint16 {
-        if index < 0 || index >= Length {
-            return 0
-        }
-        if IsLatin1 {
-            return uint16(latin1Bytes[index])
-        }
-        return utf16Units[index]
+    /// CodePointAt joins a surrogate pair at i.
+    public func CodePointAt(_ i: int) -> (cp: uint32, width: int) {
+        if !isFlat { flatten() }
+        let r = utf16.DecodeAt(flat, i)
+        return (r.codePoint, r.width)
     }
 
-    /// CodePointAt returns the Unicode code point at index.
-    public func CodePointAt(_ index: int) -> uint32 {
-        if index < 0 || index >= Length {
-            return 0
-        }
-        let first = uint32(CharCodeAt(index))
-        if first < 0xD800 || first > 0xDBFF || index + 1 >= Length {
-            return first
-        }
-        let second = uint32(CharCodeAt(index + 1))
-        if second < 0xDC00 || second > 0xDFFF {
-            return first
-        }
-        return ((first - 0xD800) << 10) + (second - 0xDC00) + 0x10000
-    }
-
-    /// Substring returns a slice from start up to end.
-    public func Substring(start: int, end: int) -> JSString {
-        let s = start < 0 ? 0 : (start > Length ? Length : start)
-        let e = end < 0 ? 0 : (end > Length ? Length : end)
-        let from = s < e ? s : e
-        let to = s < e ? e : s
-        if from == to {
-            return JSString(latin1: [])
-        }
-        if IsLatin1 {
-            var sub: [uint8] = []
-            for i in from..<to { sub.append(latin1Bytes[i]) }
-            return JSString(latin1: sub)
-        }
-        var sub: [uint16] = []
-        for i in from..<to { sub.append(utf16Units[i]) }
-        return JSString(utf16: sub)
-    }
-
-    /// Concat concatenates this string with other.
+    /// Concat joins two strings.
     public func Concat(_ other: JSString) -> JSString {
         if Length == 0 { return other }
         if other.Length == 0 { return self }
-        if IsLatin1 && other.IsLatin1 {
-            var b = latin1Bytes
-            for x in other.latin1Bytes { b.append(x) }
-            return JSString(latin1: b)
+        if Length + other.Length < 32 {
+            var u = Units
+            u.append(contentsOf: other.Units)
+            return JSString(u)
         }
-        var units: [uint16] = []
-        for i in 0..<Length { units.append(CharCodeAt(i)) }
-        for i in 0..<other.Length { units.append(other.CharCodeAt(i)) }
-        return JSString(utf16: units)
+        return JSString(left: self, right: other)
     }
 
-    public static func ==(lhs: JSString, rhs: JSString) -> bool {
-        if lhs.Length != rhs.Length { return false }
-        if lhs.IsLatin1 && rhs.IsLatin1 {
-            for i in 0..<lhs.Length {
-                if lhs.latin1Bytes[i] != rhs.latin1Bytes[i] { return false }
+    /// Slice is the substring [from, to).
+    public func Slice(_ from: int, _ to: int) -> JSString {
+        if from <= 0 && to >= Length { return self }
+        if from >= to { return JSString.Empty }
+        if !isFlat { flatten() }
+        var out: [uint16] = []
+        out.reserveCapacity(to - from)
+        var i = from
+        while i < to { out.append(flat[i]); i += 1 }
+        return JSString(out)
+    }
+
+    /// IndexOf finds needle at or after from, or returns -1.
+    public func IndexOf(_ needle: JSString, from: int) -> int {
+        let n = needle.Length
+        let h = Units
+        let nd = needle.Units
+        var i = from < 0 ? 0 : from
+        if n == 0 { return i <= Length ? i : -1 }
+        while i + n <= Length {
+            if h[i] == nd[0] {
+                var j = 1
+                while j < n && h[i + j] == nd[j] { j += 1 }
+                if j == n { return i }
             }
-            return true
+            i += 1
         }
-        for i in 0..<lhs.Length {
-            if lhs.CharCodeAt(i) != rhs.CharCodeAt(i) { return false }
+        return -1
+    }
+
+    /// LastIndexOf finds needle at or before from, or returns -1.
+    public func LastIndexOf(_ needle: JSString, from: int) -> int {
+        let n = needle.Length
+        let h = Units
+        let nd = needle.Units
+        var i = from
+        if i + n > Length { i = Length - n }
+        while i >= 0 {
+            var j = 0
+            while j < n && h[i + j] == nd[j] { j += 1 }
+            if j == n { return i }
+            i -= 1
+        }
+        return -1
+    }
+
+    public func StartsWith(_ p: JSString, at: int) -> bool {
+        if at < 0 || at + p.Length > Length { return false }
+        let h = Units
+        let pu = p.Units
+        var j = 0
+        while j < p.Length {
+            if h[at + j] != pu[j] { return false }
+            j += 1
         }
         return true
     }
 
-    public var description: string {
-        return ToUTF8()
+    /// Compare orders by code units, as the < operator does.
+    public func Compare(_ other: JSString) -> int {
+        let a = Units
+        let b = other.Units
+        let n = a.count < b.count ? a.count : b.count
+        var i = 0
+        while i < n {
+            if a[i] != b[i] { return a[i] < b[i] ? -1 : 1 }
+            i += 1
+        }
+        if a.count == b.count { return 0 }
+        return a.count < b.count ? -1 : 1
+    }
+
+    /// Equals compares code units.
+    public func Equals(_ other: JSString) -> bool {
+        if self === other { return true }
+        if Length != other.Length { return false }
+        if hashed && other.hashed && hashCache != other.hashCache { return false }
+        let a = Units
+        let b = other.Units
+        var i = 0
+        while i < a.count {
+            if a[i] != b[i] { return false }
+            i += 1
+        }
+        return true
+    }
+
+    /// EqualsASCII compares with an ASCII literal without allocating.
+    public func EqualsASCII(_ s: string) -> bool {
+        let a = Units
+        var i = 0
+        for b in s.utf8 {
+            if i >= a.count || a[i] != uint16(b) { return false }
+            i += 1
+        }
+        return i == a.count
+    }
+
+    public static func ==(lhs: JSString, rhs: JSString) -> bool {
+        return lhs.Equals(rhs)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(HashCode)
+    }
+
+    /// HashCode is FNV-1a over the code units, cached.
+    public var HashCode: int {
+        if hashed { return hashCache }
+        var h: uint64 = 14695981039346656037
+        for u in Units {
+            h = (h ^ uint64(u)) &* 1099511628211
+        }
+        hashCache = int(truncatingIfNeeded: h)
+        hashed = true
+        return hashCache
+    }
+
+    /// String is the UTF-8 form (lone surrogates become U+FFFD).
+    public var String: string {
+        if let s = utf8 { return s }
+        let s = utf16.Decode(Units)
+        utf8 = s
+        return s
+    }
+
+    public var description: string { return String }
+
+    /// IsASCIIDigits says whether the string is non-empty decimal digits.
+    public var IsASCIIDigits: bool {
+        if Length == 0 { return false }
+        for u in Units {
+            if u < 0x30 || u > 0x39 { return false }
+        }
+        return true
     }
 }
 
-/// AtomTable interns common string property keys for fast pointer equality.
+/// Intern returns the one JSString for an ASCII or UTF-8 name, so names
+/// the compiler and the built-ins share are the same object and compare
+/// by identity first.
 public final class AtomTable {
     var table: [string: JSString] = [:]
 
@@ -171,8 +248,48 @@ public final class AtomTable {
         if let existing = table[text] {
             return existing
         }
-        let s = JSString.FromUTF8(text)
+        let s = JSString.From(text)
+        _ = s.HashCode
         table[text] = s
         return s
+    }
+}
+
+/// Atoms is the process-wide table.
+public let Atoms = AtomTable()
+
+/// Name interns a UTF-8 name.
+public func Name(_ s: string) -> JSString {
+    return Atoms.Intern(s)
+}
+
+/// Builder accumulates code units.
+public struct Builder {
+    public var Units: [uint16] = []
+
+    public init() {}
+
+    public mutating func Append(_ s: JSString) {
+        Units.append(contentsOf: s.Units)
+    }
+
+    public mutating func AppendASCII(_ s: string) {
+        for b in s.utf8 { Units.append(uint16(b)) }
+    }
+
+    public mutating func AppendString(_ s: string) {
+        Units.append(contentsOf: utf16.Encode(s))
+    }
+
+    public mutating func AppendUnit(_ u: uint16) {
+        Units.append(u)
+    }
+
+    public mutating func AppendCodePoint(_ cp: uint32) {
+        utf16.Append(&Units, cp)
+    }
+
+    public func Build() -> JSString {
+        return JSString(Units)
     }
 }
