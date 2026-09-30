@@ -1,0 +1,6 @@
+1 undefined 20 true true false
+2 undefined true false
+undefined undefined false
+true false true
+TypeError
+2 5

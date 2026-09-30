@@ -87,7 +87,7 @@ public final class ProxyObject: JSObject {
         return r
     }
 
-    public override func GetOwnProperty(_ key: PropertyKey) throws -> PropertyDescriptor? {
+    public override func GetOwnProperty(_ key: value.PropertyKey) throws -> PropertyDescriptor? {
         let (t, h) = try parts("getOwnPropertyDescriptor")
         guard let tr = try trap(h, "getOwnPropertyDescriptor") else { return try t.GetOwnProperty(key) }
         let r = try tr.Call(.object(h), [.object(t), KeyToValue(key)])
@@ -135,7 +135,7 @@ public final class ProxyObject: JSObject {
         return true
     }
 
-    public override func DefineOwnProperty(_ key: PropertyKey, _ desc: PropertyDescriptor) throws -> bool {
+    public override func DefineOwnProperty(_ key: value.PropertyKey, _ desc: PropertyDescriptor) throws -> bool {
         let (t, h) = try parts("defineProperty")
         guard let tr = try trap(h, "defineProperty") else { return try t.DefineOwnProperty(key, desc) }
         let descObj = FromPropertyDescriptor(desc)
@@ -157,7 +157,7 @@ public final class ProxyObject: JSObject {
         return true
     }
 
-    public override func HasProperty(_ key: PropertyKey) throws -> bool {
+    public override func HasProperty(_ key: value.PropertyKey) throws -> bool {
         let (t, h) = try parts("has")
         guard let tr = try trap(h, "has") else { return try t.HasProperty(key) }
         let r = try tr.Call(.object(h), [.object(t), KeyToValue(key)]).Truthy
@@ -174,7 +174,7 @@ public final class ProxyObject: JSObject {
         return r
     }
 
-    public override func Get(_ key: PropertyKey, _ receiver: Value) throws -> Value {
+    public override func Get(_ key: value.PropertyKey, _ receiver: Value) throws -> Value {
         let (t, h) = try parts("get")
         guard let tr = try trap(h, "get") else { return try t.Get(key, receiver) }
         let v = try tr.Call(.object(h), [.object(t), KeyToValue(key), receiver])
@@ -189,7 +189,7 @@ public final class ProxyObject: JSObject {
         return v
     }
 
-    public override func Set(_ key: PropertyKey, _ v: Value, _ receiver: Value) throws -> bool {
+    public override func Set(_ key: value.PropertyKey, _ v: Value, _ receiver: Value) throws -> bool {
         let (t, h) = try parts("set")
         guard let tr = try trap(h, "set") else { return try t.Set(key, v, receiver) }
         if !(try tr.Call(.object(h), [.object(t), KeyToValue(key), v, receiver]).Truthy) { return false }
@@ -204,7 +204,7 @@ public final class ProxyObject: JSObject {
         return true
     }
 
-    public override func Delete(_ key: PropertyKey) throws -> bool {
+    public override func Delete(_ key: value.PropertyKey) throws -> bool {
         let (t, h) = try parts("deleteProperty")
         guard let tr = try trap(h, "deleteProperty") else { return try t.Delete(key) }
         if !(try tr.Call(.object(h), [.object(t), KeyToValue(key)]).Truthy) { return false }
@@ -219,7 +219,7 @@ public final class ProxyObject: JSObject {
         return true
     }
 
-    public override func OwnPropertyKeys() throws -> [PropertyKey] {
+    public override func OwnPropertyKeys() throws -> [value.PropertyKey] {
         let (t, h) = try parts("ownKeys")
         guard let tr = try trap(h, "ownKeys") else { return try t.OwnPropertyKeys() }
         let r = try tr.Call(.object(h), [.object(t)])
@@ -227,7 +227,7 @@ public final class ProxyObject: JSObject {
             throw ThrowTypeError("CreateListFromArrayLike called on non-object")
         }
         let list = try CreateListFromArrayLike(.object(ro))
-        var keys: [PropertyKey] = []
+        var keys: [value.PropertyKey] = []
         for v in list {
             switch v {
             case .string, .symbol:
@@ -242,8 +242,8 @@ public final class ProxyObject: JSObject {
         }
         let ext = try t.IsExtensibleObject()
         let targetKeys = try t.OwnPropertyKeys()
-        var nonconfig: [PropertyKey] = []
-        var config: [PropertyKey] = []
+        var nonconfig: [value.PropertyKey] = []
+        var config: [value.PropertyKey] = []
         for k in targetKeys {
             if let d = try t.GetOwnProperty(k), d.Configurable == false { nonconfig.append(k) } else { config.append(k) }
         }

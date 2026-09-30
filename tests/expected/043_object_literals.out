@@ -1,0 +1,6 @@
+3 method computed template num key hex key true 2
+16,x,y,m,k1,t2,1.5,quoted key,dup
+yes own
+__proto__ true
+[object AsyncFunction] function
+method not ctor: TypeError

@@ -1,0 +1,7 @@
+object global var function undefined false
+true true
+false false
+NaN undefined Infinity
+dynamic true undefined
+true false true false true true
+function,function,function,function,object,object,object,object,object

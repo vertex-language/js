@@ -5,17 +5,19 @@ import (
     "js/value"
 )
 
-public typealias PropertyKey = value.PropertyKey
-
 /// Completion is how an ECMAScript exception travels through Vertex code:
-/// every internal method and abstract operation that can throw throws one.
-public enum Completion: Error {
-    case thrown(Value)
+/// every internal method and abstract operation that can throw throws one,
+/// carrying the thrown value. (A class, not an enum with a payload: vsc
+/// can't yet put a payload enum declared here into an Error existential.)
+public final class Completion: Error {
+    public let Value: Value
 
-    public var Value: Value {
-        switch self {
-        case .thrown(let v): return v
-        }
+    public init(_ v: Value) {
+        self.Value = v
+    }
+
+    public static func thrown(_ v: Value) -> Completion {
+        return Completion(v)
     }
 }
 
@@ -141,6 +143,8 @@ public enum Kind: Equatable {
 /// JSObject is an ECMAScript object. It is an ordinary object; exotic
 /// objects (arrays, proxies, strings, arguments, typed arrays, functions)
 /// subclass it and override internal methods.
+var nextObjectSerial = 0
+
 open class JSObject {
     public var Proto: JSObject?
     public var Extensible: bool = true
@@ -151,21 +155,27 @@ open class JSObject {
     /// on, or a Date's time value.
     public var PrimitiveValue: Value = .undefined
 
-    var keys: [PropertyKey] = []
+    var keys: [value.PropertyKey] = []
     var slots: [Slot] = []
-    var index: [PropertyKey: int] = [:]
+    var index: [value.PropertyKey: int] = [:]
     var indexed: bool = false
     var deleted: int = 0
     var anyIndexKey: bool = false
 
+    /// Serial is the object's identity as a number, unique in the process:
+    /// what Map, Set and WeakMap hash an object key by.
+    public let Serial: int
+
     public init(proto: JSObject?) {
         self.Proto = proto
+        nextObjectSerial += 1
+        self.Serial = nextObjectSerial
     }
 
     // MARK: storage
 
     /// find is the slot number of an own stored key, or -1.
-    public func find(_ key: PropertyKey) -> int {
+    public func find(_ key: value.PropertyKey) -> int {
         if indexed {
             return index[key] ?? -1
         }
@@ -198,13 +208,13 @@ open class JSObject {
     }
 
     /// OwnSlot is the stored property for a key, if any.
-    public func OwnSlot(_ key: PropertyKey) -> Slot? {
+    public func OwnSlot(_ key: value.PropertyKey) -> Slot? {
         let i = find(key)
         return i < 0 ? nil : slots[i]
     }
 
     /// store adds or replaces a stored property.
-    public func store(_ key: PropertyKey, _ slot: Slot) {
+    public func store(_ key: value.PropertyKey, _ slot: Slot) {
         let i = find(key)
         if i >= 0 {
             slots[i] = slot
@@ -231,7 +241,7 @@ open class JSObject {
     }
 
     /// remove deletes a stored property.
-    public func remove(_ key: PropertyKey) {
+    public func remove(_ key: value.PropertyKey) {
         let i = find(key)
         if i < 0 { return }
         slots[i] = Slot(value: .undefined, flags: fDeleted)
@@ -245,7 +255,7 @@ open class JSObject {
     }
 
     func compact() {
-        var nk: [PropertyKey] = []
+        var nk: [value.PropertyKey] = []
         var ns: [Slot] = []
         var i = 0
         while i < keys.count {
@@ -268,7 +278,7 @@ open class JSObject {
 
     /// DefineData adds a data property directly, for building built-ins
     /// and fresh objects: no checks.
-    public func DefineData(_ key: PropertyKey, _ v: Value, writable: bool = true, enumerable: bool = true, configurable: bool = true) {
+    public func DefineData(_ key: value.PropertyKey, _ v: Value, writable: bool = true, enumerable: bool = true, configurable: bool = true) {
         var f: uint8 = 0
         if writable { f |= fWritable }
         if enumerable { f |= fEnumerable }
@@ -277,7 +287,7 @@ open class JSObject {
     }
 
     /// DefineAccessor adds an accessor property directly.
-    public func DefineAccessorDirect(_ key: PropertyKey, getter: JSObject?, setter: JSObject?, enumerable: bool = false, configurable: bool = true) {
+    public func DefineAccessorDirect(_ key: value.PropertyKey, getter: JSObject?, setter: JSObject?, enumerable: bool = false, configurable: bool = true) {
         var f: uint8 = fAccessor
         if enumerable { f |= fEnumerable }
         if configurable { f |= fConfigurable }
@@ -288,8 +298,8 @@ open class JSObject {
     }
 
     /// StoredKeys are the own stored keys in insertion order.
-    public var StoredKeys: [PropertyKey] {
-        var out: [PropertyKey] = []
+    public var StoredKeys: [value.PropertyKey] {
+        var out: [value.PropertyKey] = []
         var i = 0
         while i < keys.count {
             if slots[i].Flags & fDeleted == 0 { out.append(keys[i]) }
@@ -336,17 +346,17 @@ open class JSObject {
         return true
     }
 
-    open func GetOwnProperty(_ key: PropertyKey) throws -> PropertyDescriptor? {
+    open func GetOwnProperty(_ key: value.PropertyKey) throws -> PropertyDescriptor? {
         let i = find(key)
         if i < 0 { return nil }
         return slots[i].Descriptor
     }
 
-    open func DefineOwnProperty(_ key: PropertyKey, _ desc: PropertyDescriptor) throws -> bool {
+    open func DefineOwnProperty(_ key: value.PropertyKey, _ desc: PropertyDescriptor) throws -> bool {
         return try OrdinaryDefineOwnProperty(key, desc)
     }
 
-    public func OrdinaryDefineOwnProperty(_ key: PropertyKey, _ desc: PropertyDescriptor) throws -> bool {
+    public func OrdinaryDefineOwnProperty(_ key: value.PropertyKey, _ desc: PropertyDescriptor) throws -> bool {
         let current = try GetOwnProperty(key)
         let ext = try IsExtensibleObject()
         return ValidateAndApply(key, ext, desc, current)
@@ -354,7 +364,7 @@ open class JSObject {
 
     /// ValidateAndApply is ValidateAndApplyPropertyDescriptor (§10.1.6.3)
     /// for this object's own storage.
-    public func ValidateAndApply(_ key: PropertyKey, _ extensible: bool, _ desc: PropertyDescriptor, _ current: PropertyDescriptor?) -> bool {
+    public func ValidateAndApply(_ key: value.PropertyKey, _ extensible: bool, _ desc: PropertyDescriptor, _ current: PropertyDescriptor?) -> bool {
         guard let cur = current else {
             if !extensible { return false }
             if desc.IsAccessor {
@@ -426,7 +436,7 @@ open class JSObject {
         return true
     }
 
-    open func HasProperty(_ key: PropertyKey) throws -> bool {
+    open func HasProperty(_ key: value.PropertyKey) throws -> bool {
         var o: JSObject = self
         while true {
             if o.isOrdinaryLookup {
@@ -439,7 +449,7 @@ open class JSObject {
         }
     }
 
-    public func HasPropertySlow(_ key: PropertyKey) throws -> bool {
+    public func HasPropertySlow(_ key: value.PropertyKey) throws -> bool {
         if try GetOwnProperty(key) != nil { return true }
         guard let p = try GetPrototypeOf() else { return false }
         return try p.HasProperty(key)
@@ -449,7 +459,7 @@ open class JSObject {
     /// so lookups can read storage directly.
     open var isOrdinaryLookup: bool { return true }
 
-    open func Get(_ key: PropertyKey, _ receiver: Value) throws -> Value {
+    open func Get(_ key: value.PropertyKey, _ receiver: Value) throws -> Value {
         var o: JSObject = self
         while true {
             if o.isOrdinaryLookup {
@@ -469,7 +479,7 @@ open class JSObject {
         }
     }
 
-    public func GetSlow(_ key: PropertyKey, _ receiver: Value) throws -> Value {
+    public func GetSlow(_ key: value.PropertyKey, _ receiver: Value) throws -> Value {
         guard let desc = try GetOwnProperty(key) else {
             guard let p = try GetPrototypeOf() else { return .undefined }
             return try p.Get(key, receiver)
@@ -479,7 +489,7 @@ open class JSObject {
         return try go.Call(receiver, [])
     }
 
-    open func Set(_ key: PropertyKey, _ v: Value, _ receiver: Value) throws -> bool {
+    open func Set(_ key: value.PropertyKey, _ v: Value, _ receiver: Value) throws -> bool {
         // Fast path: an own writable data property on the receiver itself.
         if isOrdinaryLookup, case .object(let r) = receiver, r === self {
             let i = find(key)
@@ -492,7 +502,7 @@ open class JSObject {
     }
 
     /// OrdinarySet is OrdinarySetWithOwnDescriptor (§10.1.9.2).
-    public func OrdinarySet(_ key: PropertyKey, _ v: Value, _ receiver: Value) throws -> bool {
+    public func OrdinarySet(_ key: value.PropertyKey, _ v: Value, _ receiver: Value) throws -> bool {
         var ownDesc = try GetOwnProperty(key)
         if ownDesc == nil {
             if let parent = try GetPrototypeOf() {
@@ -518,7 +528,7 @@ open class JSObject {
         return true
     }
 
-    open func Delete(_ key: PropertyKey) throws -> bool {
+    open func Delete(_ key: value.PropertyKey) throws -> bool {
         let i = find(key)
         if i < 0 { return true }
         if slots[i].Flags & fConfigurable == 0 { return false }
@@ -526,16 +536,16 @@ open class JSObject {
         return true
     }
 
-    open func OwnPropertyKeys() throws -> [PropertyKey] {
+    open func OwnPropertyKeys() throws -> [value.PropertyKey] {
         return OrdinaryOwnPropertyKeys()
     }
 
     /// OrdinaryOwnPropertyKeys orders keys: integer indices ascending, then
     /// strings and then symbols in the order they were added.
-    public func OrdinaryOwnPropertyKeys() -> [PropertyKey] {
+    public func OrdinaryOwnPropertyKeys() -> [value.PropertyKey] {
         var ints: [uint32] = []
-        var strs: [PropertyKey] = []
-        var syms: [PropertyKey] = []
+        var strs: [value.PropertyKey] = []
+        var syms: [value.PropertyKey] = []
         var i = 0
         while i < keys.count {
             if slots[i].Flags & fDeleted == 0 {
@@ -547,7 +557,7 @@ open class JSObject {
             }
             i += 1
         }
-        var out: [PropertyKey] = []
+        var out: [value.PropertyKey] = []
         if !ints.isEmpty {
             ints.sort()
             for x in ints { out.append(.index(x)) }
@@ -585,37 +595,37 @@ public func NewObject(_ proto: JSObject?) -> JSObject {
 }
 
 /// Key helpers.
-public func Key(_ s: string) -> PropertyKey {
-    return PropertyKey.Named(s)
+public func Key(_ s: string) -> value.PropertyKey {
+    return value.PropertyKey.Named(s)
 }
 
-public func SymKey(_ s: value.Symbol) -> PropertyKey {
+public func SymKey(_ s: value.Symbol) -> value.PropertyKey {
     return .symbol(s)
 }
 
-let keyLength = PropertyKey.Named("length")
-let keyPrototype = PropertyKey.Named("prototype")
-let keyConstructor = PropertyKey.Named("constructor")
-let keyName = PropertyKey.Named("name")
-let keyMessage = PropertyKey.Named("message")
-let keyValue = PropertyKey.Named("value")
-let keyDone = PropertyKey.Named("done")
-let keyNext = PropertyKey.Named("next")
-let keyThen = PropertyKey.Named("then")
-let keyToString = PropertyKey.Named("toString")
-let keyValueOf = PropertyKey.Named("valueOf")
-let keyCallee = PropertyKey.Named("callee")
-let keyStack = PropertyKey.Named("stack")
-let keyCause = PropertyKey.Named("cause")
-let keyReturn = PropertyKey.Named("return")
-let keyThrow = PropertyKey.Named("throw")
-let keyGet = PropertyKey.Named("get")
-let keySet = PropertyKey.Named("set")
-let keyEnumerable = PropertyKey.Named("enumerable")
-let keyConfigurable = PropertyKey.Named("configurable")
-let keyWritable = PropertyKey.Named("writable")
-let keyLastIndex = PropertyKey.Named("lastIndex")
-let keyIndex = PropertyKey.Named("index")
-let keyInput = PropertyKey.Named("input")
-let keyGroups = PropertyKey.Named("groups")
-let keyErrors = PropertyKey.Named("errors")
+let keyLength = value.PropertyKey.Named("length")
+let keyPrototype = value.PropertyKey.Named("prototype")
+let keyConstructor = value.PropertyKey.Named("constructor")
+let keyName = value.PropertyKey.Named("name")
+let keyMessage = value.PropertyKey.Named("message")
+let keyValue = value.PropertyKey.Named("value")
+let keyDone = value.PropertyKey.Named("done")
+let keyNext = value.PropertyKey.Named("next")
+let keyThen = value.PropertyKey.Named("then")
+let keyToString = value.PropertyKey.Named("toString")
+let keyValueOf = value.PropertyKey.Named("valueOf")
+let keyCallee = value.PropertyKey.Named("callee")
+let keyStack = value.PropertyKey.Named("stack")
+let keyCause = value.PropertyKey.Named("cause")
+let keyReturn = value.PropertyKey.Named("return")
+let keyThrow = value.PropertyKey.Named("throw")
+let keyGet = value.PropertyKey.Named("get")
+let keySet = value.PropertyKey.Named("set")
+let keyEnumerable = value.PropertyKey.Named("enumerable")
+let keyConfigurable = value.PropertyKey.Named("configurable")
+let keyWritable = value.PropertyKey.Named("writable")
+let keyLastIndex = value.PropertyKey.Named("lastIndex")
+let keyIndex = value.PropertyKey.Named("index")
+let keyInput = value.PropertyKey.Named("input")
+let keyGroups = value.PropertyKey.Named("groups")
+let keyErrors = value.PropertyKey.Named("errors")

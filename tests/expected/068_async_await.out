@@ -1,0 +1,5 @@
+true [object AsyncFunction]
+arrow 42
+method
+b start | a start | sync end | a after await | b got A | b done
+thenable resolved

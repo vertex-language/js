@@ -1,9 +1,17 @@
 package object
 
 import (
+    "math"
     "js/str"
     "js/value"
 )
+
+// MARK: arguments
+
+/// Arg is argument i, or undefined.
+public func Arg(_ args: [Value], _ i: int) -> Value {
+    return i < args.count ? args[i] : .undefined
+}
 
 // MARK: errors
 
@@ -34,23 +42,23 @@ public func InstallStack(_ e: JSObject) {
 }
 
 public func ThrowTypeError(_ msg: string) -> Completion {
-    return .thrown(.object(MakeError(CurrentRealm().TypeErrorPrototype, str.JSString.From(msg))))
+    return Completion(.object(MakeError(CurrentRealm().TypeErrorPrototype, str.JSString.From(msg))))
 }
 
 public func ThrowRangeError(_ msg: string) -> Completion {
-    return .thrown(.object(MakeError(CurrentRealm().RangeErrorPrototype, str.JSString.From(msg))))
+    return Completion(.object(MakeError(CurrentRealm().RangeErrorPrototype, str.JSString.From(msg))))
 }
 
 public func ThrowReferenceError(_ msg: string) -> Completion {
-    return .thrown(.object(MakeError(CurrentRealm().ReferenceErrorPrototype, str.JSString.From(msg))))
+    return Completion(.object(MakeError(CurrentRealm().ReferenceErrorPrototype, str.JSString.From(msg))))
 }
 
 public func ThrowSyntaxError(_ msg: string) -> Completion {
-    return .thrown(.object(MakeError(CurrentRealm().SyntaxErrorPrototype, str.JSString.From(msg))))
+    return Completion(.object(MakeError(CurrentRealm().SyntaxErrorPrototype, str.JSString.From(msg))))
 }
 
 public func ThrowURIError(_ msg: string) -> Completion {
-    return .thrown(.object(MakeError(CurrentRealm().URIErrorPrototype, str.JSString.From(msg))))
+    return Completion(.object(MakeError(CurrentRealm().URIErrorPrototype, str.JSString.From(msg))))
 }
 
 /// Describe is a short form of a value for error messages, as V8 writes them.
@@ -113,7 +121,7 @@ public func ToPrimitive(_ v: Value, _ hint: Hint = .defaultHint) throws -> Value
 
 /// OrdinaryToPrimitive (§7.1.1.1).
 public func OrdinaryToPrimitive(_ o: JSObject, _ hint: Hint) throws -> Value {
-    let order: [PropertyKey] = hint == .string ? [keyToString, keyValueOf] : [keyValueOf, keyToString]
+    let order: [value.PropertyKey] = hint == .string ? [keyToString, keyValueOf] : [keyValueOf, keyToString]
     for k in order {
         let m = try o.Get(k, .object(o))
         if case .object(let f) = m, f.IsCallable {
@@ -173,20 +181,20 @@ let strTrue = str.Name("true")
 let strFalse = str.Name("false")
 
 /// ToPropertyKey (§7.1.19).
-public func ToPropertyKey(_ v: Value) throws -> PropertyKey {
+public func ToPropertyKey(_ v: Value) throws -> value.PropertyKey {
     switch v {
-    case .string(let s): return PropertyKey.FromString(s)
-    case .number(let d): return PropertyKey.FromNumber(d)
+    case .string(let s): return value.PropertyKey.FromString(s)
+    case .number(let d): return value.PropertyKey.FromNumber(d)
     case .symbol(let s): return .symbol(s)
     default:
         let p = try ToPrimitive(v, .string)
         if case .symbol(let s) = p { return .symbol(s) }
-        return PropertyKey.FromString(try ToString(p))
+        return value.PropertyKey.FromString(try ToString(p))
     }
 }
 
 /// KeyToValue is a property key as a language value.
-public func KeyToValue(_ k: PropertyKey) -> Value {
+public func KeyToValue(_ k: value.PropertyKey) -> Value {
     switch k {
     case .index(let i): return .string(value.NumberToJSString(float64(i)))
     case .string(let s): return .string(s)
@@ -296,32 +304,51 @@ public func IsArray(_ v: Value) throws -> bool {
 
 /// IsLooselyEqual (§7.2.14), the == operator.
 public func LooseEquals(_ x: Value, _ y: Value) throws -> bool {
-    switch (x, y) {
-    case (.number(let a), .number(let b)): return a == b
-    case (.string(let a), .string(let b)): return a.Equals(b)
-    case (.undefined, .undefined), (.null, .null), (.undefined, .null), (.null, .undefined): return true
-    case (.bool(let a), .bool(let b)): return a == b
-    case (.symbol(let a), .symbol(let b)): return a === b
-    case (.bigint(let a), .bigint(let b)): return value.BigInt.Equal(a, b)
-    case (.object(let a), .object(let b)): return a === b
-    case (.object(let o), .undefined), (.object(let o), .null): return o.IsHTMLDDA
-    case (.undefined, .object(let o)), (.null, .object(let o)): return o.IsHTMLDDA
-    case (.number(let a), .string(let s)): return a == value.StringToNumber(s)
-    case (.string(let s), .number(let b)): return value.StringToNumber(s) == b
-    case (.bigint(let a), .string(let s)):
+    // Same types compare as ===.
+    if sameType(x, y) { return StrictEquals(x, y) }
+    if x.IsNullish && y.IsNullish { return true }
+    if case .object(let o) = x, y.IsNullish { return o.IsHTMLDDA }
+    if case .object(let o) = y, x.IsNullish { return o.IsHTMLDDA }
+    if case .number(let a) = x, case .string(let s) = y { return a == value.StringToNumber(s) }
+    if case .string(let s) = x, case .number(let b) = y { return value.StringToNumber(s) == b }
+    if case .bigint(let a) = x, case .string(let s) = y {
         guard let b = value.BigInt.Parse(str.JSString(value.TrimSpace(s.Units)).String) else { return false }
         return value.BigInt.Equal(a, b)
-    case (.string, .bigint): return try LooseEquals(y, x)
-    case (.bool(let b), _): return try LooseEquals(.number(b ? 1 : 0), y)
-    case (_, .bool(let b)): return try LooseEquals(x, .number(b ? 1 : 0))
-    case (.object, .number), (.object, .string), (.object, .bigint), (.object, .symbol):
-        return try LooseEquals(try ToPrimitive(x), y)
-    case (.number, .object), (.string, .object), (.bigint, .object), (.symbol, .object):
-        return try LooseEquals(x, try ToPrimitive(y))
-    case (.bigint(let a), .number(let b)): return compareBigNumber(a, b) == 0
-    case (.number(let a), .bigint(let b)): return compareBigNumber(b, a) == 0
-    default: return false
     }
+    if case .string = x, case .bigint = y { return try LooseEquals(y, x) }
+    if case .bool(let b) = x { return try LooseEquals(.number(b ? 1 : 0), y) }
+    if case .bool(let b) = y { return try LooseEquals(x, .number(b ? 1 : 0)) }
+    if case .object = x {
+        switch y {
+        case .number, .string, .bigint, .symbol: return try LooseEquals(try ToPrimitive(x), y)
+        default: return false
+        }
+    }
+    if case .object = y {
+        switch x {
+        case .number, .string, .bigint, .symbol: return try LooseEquals(x, try ToPrimitive(y))
+        default: return false
+        }
+    }
+    if case .bigint(let a) = x, case .number(let b) = y { return compareBigNumber(a, b) == 0 }
+    if case .number(let a) = x, case .bigint(let b) = y { return compareBigNumber(b, a) == 0 }
+    return false
+}
+
+/// sameType says whether two values are of the same language type.
+func sameType(_ x: Value, _ y: Value) -> bool {
+    switch x {
+    case .undefined: return y.IsUndefined
+    case .null: return y.IsNull
+    case .bool: if case .bool = y { return true }
+    case .number: if case .number = y { return true }
+    case .string: if case .string = y { return true }
+    case .symbol: if case .symbol = y { return true }
+    case .bigint: if case .bigint = y { return true }
+    case .object: if case .object = y { return true }
+    case .empty: return y.IsEmpty
+    }
+    return false
 }
 
 /// compareBigNumber compares a BigInt with a number: -1, 0, 1, or 2 for NaN.
@@ -358,30 +385,31 @@ public func LessThan(_ x: Value, _ y: Value, leftFirst: bool) throws -> bool? {
     }
     let nx = try ToNumeric(px)
     let ny = try ToNumeric(py)
-    switch (nx, ny) {
-    case (.number(let a), .number(let b)):
+    if case .number(let a) = nx, case .number(let b) = ny {
         if a.isNaN || b.isNaN { return nil }
         return a < b
-    case (.bigint(let a), .bigint(let b)):
+    }
+    if case .bigint(let a) = nx, case .bigint(let b) = ny {
         return value.BigInt.Compare(a, b) < 0
-    case (.bigint(let a), .number(let b)):
+    }
+    if case .bigint(let a) = nx, case .number(let b) = ny {
         let c = compareBigNumber(a, b)
         if c == 2 { return nil }
         return c < 0
-    case (.number(let a), .bigint(let b)):
+    }
+    if case .number(let a) = nx, case .bigint(let b) = ny {
         let c = compareBigNumber(b, a)
         if c == 2 { return nil }
         return c > 0
-    default:
-        return nil
     }
+    return nil
 }
 
 // MARK: operations on objects (§7.3)
 
 /// GetV (§7.3.3) gets a property of any value, looking primitives up on
 /// their prototype.
-public func GetV(_ v: Value, _ key: PropertyKey) throws -> Value {
+public func GetV(_ v: Value, _ key: value.PropertyKey) throws -> Value {
     switch v {
     case .object(let o):
         return try o.Get(key, v)
@@ -405,7 +433,7 @@ public func GetV(_ v: Value, _ key: PropertyKey) throws -> Value {
 }
 
 /// KeyDisplay is a key as V8 quotes it in messages.
-public func KeyDisplay(_ k: PropertyKey) -> string {
+public func KeyDisplay(_ k: value.PropertyKey) -> string {
     switch k {
     case .index(let i): return "\(i)"
     case .string(let s): return s.String
@@ -414,12 +442,12 @@ public func KeyDisplay(_ k: PropertyKey) -> string {
 }
 
 /// Get (§7.3.2).
-public func Get(_ o: JSObject, _ key: PropertyKey) throws -> Value {
+public func Get(_ o: JSObject, _ key: value.PropertyKey) throws -> Value {
     return try o.Get(key, .object(o))
 }
 
 /// GetMethod (§7.3.11): undefined for null or undefined, else it must be callable.
-public func GetMethod(_ v: Value, _ key: PropertyKey) throws -> Value {
+public func GetMethod(_ v: Value, _ key: value.PropertyKey) throws -> Value {
     let f = try GetV(v, key)
     if f.IsNullish { return .undefined }
     if !f.IsCallable {
@@ -429,7 +457,7 @@ public func GetMethod(_ v: Value, _ key: PropertyKey) throws -> Value {
 }
 
 /// SetOrThrow is Set(O, P, V, Throw) (§7.3.4).
-public func SetProperty(_ o: JSObject, _ key: PropertyKey, _ v: Value, throwing: bool) throws {
+public func SetProperty(_ o: JSObject, _ key: value.PropertyKey, _ v: Value, throwing: bool) throws {
     let ok = try o.Set(key, v, .object(o))
     if !ok && throwing {
         throw ThrowTypeError("Cannot assign to read only property '\(KeyDisplay(key))' of object")
@@ -438,7 +466,7 @@ public func SetProperty(_ o: JSObject, _ key: PropertyKey, _ v: Value, throwing:
 
 /// PutValue for a property reference on any base value, as the
 /// interpreter's assignments do it.
-public func PutProperty(_ base: Value, _ key: PropertyKey, _ v: Value, strict: bool) throws {
+public func PutProperty(_ base: Value, _ key: value.PropertyKey, _ v: Value, strict: bool) throws {
     switch base {
     case .object(let o):
         let ok = try o.Set(key, v, base)
@@ -463,33 +491,33 @@ func DescribeForAssign(_ o: JSObject) -> string {
 }
 
 /// CreateDataProperty (§7.3.5).
-public func CreateDataProperty(_ o: JSObject, _ key: PropertyKey, _ v: Value) throws -> bool {
+public func CreateDataProperty(_ o: JSObject, _ key: value.PropertyKey, _ v: Value) throws -> bool {
     return try o.DefineOwnProperty(key, PropertyDescriptor.Data(v))
 }
 
 /// CreateDataPropertyOrThrow (§7.3.7).
-public func CreateDataPropertyOrThrow(_ o: JSObject, _ key: PropertyKey, _ v: Value) throws {
+public func CreateDataPropertyOrThrow(_ o: JSObject, _ key: value.PropertyKey, _ v: Value) throws {
     if !(try CreateDataProperty(o, key, v)) {
         throw ThrowTypeError("Cannot define property \(KeyDisplay(key)), object is not extensible")
     }
 }
 
 /// DefinePropertyOrThrow (§7.3.8).
-public func DefinePropertyOrThrow(_ o: JSObject, _ key: PropertyKey, _ d: PropertyDescriptor) throws {
+public func DefinePropertyOrThrow(_ o: JSObject, _ key: value.PropertyKey, _ d: PropertyDescriptor) throws {
     if !(try o.DefineOwnProperty(key, d)) {
         throw ThrowTypeError("Cannot redefine property: \(KeyDisplay(key))")
     }
 }
 
 /// DeletePropertyOrThrow (§7.3.9).
-public func DeletePropertyOrThrow(_ o: JSObject, _ key: PropertyKey) throws {
+public func DeletePropertyOrThrow(_ o: JSObject, _ key: value.PropertyKey) throws {
     if !(try o.Delete(key)) {
         throw ThrowTypeError("Cannot delete property '\(KeyDisplay(key))' of \(DescribeForAssign(o))")
     }
 }
 
 /// HasOwnProperty (§7.3.13).
-public func HasOwnProperty(_ o: JSObject, _ key: PropertyKey) throws -> bool {
+public func HasOwnProperty(_ o: JSObject, _ key: value.PropertyKey) throws -> bool {
     if o.isOrdinaryLookup { return o.find(key) >= 0 }
     return try o.GetOwnProperty(key) != nil
 }
@@ -508,7 +536,7 @@ public func Construct(_ f: JSObject, _ args: [Value], _ newTarget: JSObject? = n
 }
 
 /// Invoke (§7.3.21): call a method by name.
-public func Invoke(_ v: Value, _ key: PropertyKey, _ args: [Value]) throws -> Value {
+public func Invoke(_ v: Value, _ key: value.PropertyKey, _ args: [Value]) throws -> Value {
     let f = try GetV(v, key)
     return try Call(f, v, args)
 }
@@ -668,7 +696,7 @@ public func EnumerableOwnProperties(_ o: JSObject, _ kind: EnumKind) throws -> [
 }
 
 /// CopyDataProperties (§7.3.25).
-public func CopyDataProperties(_ target: JSObject, _ source: Value, excluded: [PropertyKey]) throws {
+public func CopyDataProperties(_ target: JSObject, _ source: Value, excluded: [value.PropertyKey]) throws {
     if source.IsNullish { return }
     let from = try ToObject(source)
     for k in try from.OwnPropertyKeys() {
@@ -815,14 +843,13 @@ public func Add(_ x: Value, _ y: Value) throws -> Value {
 public func Arithmetic(_ op: ArithOp, _ x: Value, _ y: Value) throws -> Value {
     let nx = try ToNumeric(x)
     let ny = try ToNumeric(y)
-    switch (nx, ny) {
-    case (.number(let a), .number(let b)):
+    if case .number(let a) = nx, case .number(let b) = ny {
         return .number(NumberOp(op, a, b))
-    case (.bigint(let a), .bigint(let b)):
-        return .bigint(try BigIntOp(op, a, b))
-    default:
-        throw ThrowTypeError("Cannot mix BigInt and other types, use explicit conversions")
     }
+    if case .bigint(let a) = nx, case .bigint(let b) = ny {
+        return .bigint(try BigIntOp(op, a, b))
+    }
+    throw ThrowTypeError("Cannot mix BigInt and other types, use explicit conversions")
 }
 
 public func NumberOp(_ op: ArithOp, _ a: float64, _ b: float64) -> float64 {
@@ -872,20 +899,7 @@ public func NumberPow(_ base: float64, _ e: float64) -> float64 {
         if ab > 1 { return e > 0 ? float64.infinity : 0 }
         return e > 0 ? 0 : float64.infinity
     }
-    if e == e.rounded(.towardZero) && (e < 0 ? -e : e) < 9007199254740992 {
-        // Integer exponent: repeated squaring, as V8 does for small ones.
-        var n = e < 0 ? -e : e
-        var result: float64 = 1
-        var b = base
-        while n > 0 {
-            let half = (n / 2).rounded(.down)
-            if n - half * 2 == 1 { result *= b }
-            b *= b
-            n = half
-        }
-        return e < 0 ? 1 / result : result
-    }
-    return value.Pow(base, e)
+    return math.Pow(base, e)
 }
 
 public func BigIntOp(_ op: ArithOp, _ a: value.BigInt, _ b: value.BigInt) throws -> value.BigInt {

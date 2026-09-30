@@ -1,0 +1,8 @@
+true false true
+true false
+null junior,senior b,c
+1,3 2,4
+[object Null] [object Undefined] [object Array] [object Number] [object String] [object Boolean] [object Function] [object Date] [object RegExp] [object Error]
+[object Math] [object JSON] [object Symbol] [object BigInt] [object Map] [object Promise] [object Generator]
+[object Object] custom
+true true object true

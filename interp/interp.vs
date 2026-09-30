@@ -1,801 +1,428 @@
+// Package interp runs js/bytecode: the Engine behind every realm's
+// ECMAScript function objects.
+//
+// A call runs a Frame: registers, an accumulator, the current context and
+// the program counter. Generators and async functions keep their frame
+// when they suspend at a yield or an await, and resume it later; the
+// frame is all the state there is.
 package interp
 
 import (
-    "gc"
     "js/bytecode"
-    "js/value"
     "js/object"
-    "js/ic"
+    "js/str"
+    "js/value"
 )
 
-/// VMError represents a runtime JavaScript exception.
-public enum VMError: Error, CustomStringConvertible {
-    case error(string)
+typealias Value = object.Value
 
-    public var Message: string {
-        switch self {
-        case .error(let msg): return msg
-        }
-    }
-
-    public var description: string {
-        return "Uncaught \(Message)"
-    }
+/// Exit is how a frame's run ended for now.
+enum Exit {
+    case returned(Value)
+    case yielded(Value, bool)   // the value, and whether it is already an iterator result
+    case awaited(Value)
+    case started                // a generator at its start
+    case call(Frame)            // a call to run on the frame stack; the caller resumes with its value
 }
 
-final class GeneratorRecord {
-    let fn: bytecode.BytecodeFunction
+/// Frame is one activation of a function, script or eval.
+final class Frame {
+    let t: bytecode.FunctionTemplate
+    let fn: object.JSFunction?
+    var regs: [Value]
+    let args: [Value]
     var pc: int = 0
-    var savedStack: [value.Value] = []
-    var thisValue: value.Value
-    var isDone: bool = false
+    var acc: Value = .undefined
+    var ctx: object.Context?
+    /// ctxDepth counts contexts pushed beyond the function's own.
+    var ctxDepth: int = 0
+    var this: Value
+    var newTarget: Value
+    var funcEnv: object.FunctionEnv?
+    let realm: object.Realm
+    /// varContext is where a sloppy direct eval's vars go (nil: global).
+    var varContext: object.Context? = nil
+    var isEval: bool = false
+    var yieldModeReg: int32 = -1
+    var yieldValueReg: int32 = -1
+    /// generator is the object a generatorStart returns.
+    var generator: object.JSObject? = nil
+    /// constructed is the object a [[Construct]] run on the frame stack
+    /// made, which the frame's return value may replace.
+    var constructed: object.JSObject? = nil
 
-    init(fn: bytecode.BytecodeFunction, thisValue: value.Value, initialStack: [value.Value]) {
+    init(t: bytecode.FunctionTemplate, fn: object.JSFunction?, args: [Value], this: Value, newTarget: Value, ctx: object.Context?, realm: object.Realm) {
+        self.t = t
         self.fn = fn
-        self.thisValue = thisValue
-        self.savedStack = initialStack
+        self.args = args
+        self.this = this
+        self.newTarget = newTarget
+        self.ctx = ctx
+        self.realm = realm
+        self.regs = [Value](repeating: .undefined, count: t.RegisterCount)
     }
 }
 
-/// CallFrame records execution state for an active bytecode function invocation.
-final class CallFrame {
-    let fn: bytecode.BytecodeFunction
-    var pc: int = 0
-    let registerBase: int
-    var thisValue: value.Value
-    let feedback: ic.FeedbackVector
-    var genRecord: GeneratorRecord? = nil
-
-    init(fn: bytecode.BytecodeFunction, registerBase: int, thisValue: value.Value) {
-        self.fn = fn
-        self.registerBase = registerBase
-        self.thisValue = thisValue
-        self.feedback = ic.FeedbackVector(slotCount: fn.FeedbackSlotCount)
-    }
-}
-
-/// VM executes JavaScript bytecode functions.
-public final class VM {
-    var stack: [value.Value] = []
-    var acc: value.Value = value.Value.Undefined
+/// Engine runs bytecode for every realm of an agent.
+public final class Engine: object.Engine {
+    var frames: [Frame] = []
+    var depth: int = 0
+    /// MaxDepth bounds JavaScript call depth ("Maximum call stack size exceeded").
+    public var MaxDepth: int = 10000
+    /// StackLimit bounds the native stack, in bytes, the engine uses below
+    /// where it was entered. JavaScript-to-JavaScript calls use none; a
+    /// built-in calling back into JavaScript uses a few kilobytes. A host
+    /// running the engine on a thread with a small stack lowers it; one on
+    /// a main thread's 8 MB can raise it.
+    public var StackLimit: int = 1 << 20
+    var stackBase: uint = 0
 
     public init() {}
 
-    /// CollectRoots returns all live cells held in VM registers and the accumulator.
-    public func CollectRoots() -> [gc.Cell] {
-        var roots: [gc.Cell] = []
-        if acc.Type == .object, let c = acc.ObjVal as? gc.Cell {
-            roots.append(c)
+    // MARK: running
+
+    /// run executes a frame until it returns, yields, awaits or starts, and
+    /// dispatches exceptions to its handlers. throwing resumes the frame by
+    /// throwing at its current instruction (an await's rejection).
+    ///
+    /// Calls from bytecode to ordinary bytecode functions do not recurse:
+    /// exec hands back the callee's frame, run pushes it, and the caller
+    /// resumes with its return value. An exception no handler in a frame
+    /// catches pops that frame and is thrown again at the caller's call.
+    func run(_ base: Frame, throwing: Value? = nil) throws -> Exit {
+        // Built-ins that call back into JavaScript (map, getters, toString)
+        // still nest run on the native stack: bound the bytes that uses.
+        let sp = stackAddress()
+        if frames.isEmpty {
+            stackBase = sp
+        } else if stackBase > sp && stackBase - sp > uint(StackLimit) {
+            throw object.ThrowRangeError("Maximum call stack size exceeded")
         }
-        for val in stack {
-            if val.Type == .object, let c = val.ObjVal as? gc.Cell {
-                roots.append(c)
-            }
+        let bottom = frames.count
+        frames.append(base)
+        let savedRealm = object.CurrentRealmOrNil()
+        object.SetCurrentRealm(base.realm)
+        defer {
+            depth -= frames.count - bottom - 1
+            while frames.count > bottom { _ = frames.removeLast() }
+            object.SetCurrentRealm(savedRealm)
         }
-        return roots
-    }
-
-    /// Run executes a BytecodeFunction in the given Realm with thisValue and arguments.
-    public func Run(_ fn: bytecode.BytecodeFunction, realm: object.Realm, thisValue: value.Value = value.Value.Undefined, args: [value.Value] = []) throws -> value.Value {
-        let regBase = stack.count
-        let totalRegisters = fn.RegisterCount + 2
-        for _ in 0..<totalRegisters {
-            stack.append(value.Value.Undefined)
-        }
-
-        // Store receiver 'this' at r0
-        stack[regBase] = thisValue
-        let regularParamCount = fn.HasRestParameter ? (fn.ParameterCount - 1) : fn.ParameterCount
-        for i in 0..<regularParamCount {
-            if i < args.count && regBase + 1 + i < stack.count {
-                stack[regBase + 1 + i] = args[i]
-            }
-        }
-        if fn.HasRestParameter {
-            var restElements: [value.Value] = []
-            if args.count > regularParamCount {
-                for i in regularParamCount..<args.count {
-                    restElements.append(args[i])
-                }
-            }
-            let restArr = realm.NewArray(elements: restElements)
-            let restSlot = regBase + 1 + regularParamCount
-            if restSlot < stack.count {
-                stack[restSlot] = value.Value.Object(restArr)
-            }
-        }
-
-        if fn.IsGenerator {
-            var initialStack: [value.Value] = []
-            for i in regBase..<stack.count {
-                initialStack.append(stack[i])
-            }
-            while stack.count > regBase { _ = stack.removeLast() }
-
-            let rec = GeneratorRecord(fn: fn, thisValue: thisValue, initialStack: initialStack)
-            let genObj = realm.NewObject()
-            genObj.InternalTag = "Generator"
-
-            genObj.Set("next", value.Value.Object(realm.NewFunction(name: "next") { r, _, _ in
-                if rec.isDone {
-                    let doneObj = r.NewObject()
-                    doneObj.Set("value", value.Value.Undefined)
-                    doneObj.Set("done", value.Value.Boolean(true))
-                    return value.Value.Object(doneObj)
-                }
-                return try self.resumeGenerator(rec: rec, realm: r)
-            }))
-
-            genObj.Set("return", value.Value.Object(realm.NewFunction(name: "return") { r, _, retArgs in
-                rec.isDone = true
-                let retVal = retArgs.isEmpty ? value.Value.Undefined : retArgs[0]
-                let doneObj = r.NewObject()
-                doneObj.Set("value", retVal)
-                doneObj.Set("done", value.Value.Boolean(true))
-                return value.Value.Object(doneObj)
-            }))
-
-            return value.Value.Object(genObj)
-        }
-
-        if fn.IsAsync {
-            let promiseCtor = realm.GlobalObject.Get("Promise")
+        var pending = throwing
+        while true {
+            let f = frames[frames.count - 1]
             do {
-                let frame = CallFrame(fn: fn, registerBase: regBase, thisValue: thisValue)
-                let result = try dispatch(frame: frame, realm: realm)
-                while stack.count > regBase { _ = stack.removeLast() }
-                if promiseCtor.IsObject, let ctorObj = promiseCtor.ObjVal as? object.JSObject {
-                    let resolveProp = ctorObj.Get("resolve")
-                    if resolveProp.IsObject, let resFn = resolveProp.ObjVal as? object.JSObject {
-                        return try realm.Call(resFn, thisVal: promiseCtor, args: [result])
+                if let err = pending {
+                    pending = nil
+                    throw object.Completion(err)
+                }
+                let exit = try exec(f)
+                switch exit {
+                case .call(let callee):
+                    if depth >= MaxDepth {
+                        f.pc -= 1
+                        throw object.ThrowRangeError("Maximum call stack size exceeded")
                     }
-                }
-                return result
-            } catch {
-                while stack.count > regBase { _ = stack.removeLast() }
-                if promiseCtor.IsObject, let ctorObj = promiseCtor.ObjVal as? object.JSObject {
-                    let rejectProp = ctorObj.Get("reject")
-                    if rejectProp.IsObject, let rejFn = rejectProp.ObjVal as? object.JSObject {
-                        let errMsg = value.Value.String("\(error)")
-                        return try realm.Call(rejFn, thisVal: promiseCtor, args: [errMsg])
-                    }
-                }
-                throw error
-            }
-        }
-
-        let frame = CallFrame(fn: fn, registerBase: regBase, thisValue: thisValue)
-        let result = try dispatch(frame: frame, realm: realm)
-
-        // Unwind stack
-        while stack.count > regBase {
-            _ = stack.removeLast()
-        }
-        return result
-    }
-
-    func resumeGenerator(rec: GeneratorRecord, realm: object.Realm) throws -> value.Value {
-        let regBase = stack.count
-        for val in rec.savedStack {
-            stack.append(val)
-        }
-        let frame = CallFrame(fn: rec.fn, registerBase: regBase, thisValue: rec.thisValue)
-        frame.pc = rec.pc
-        frame.genRecord = rec
-        let res = try dispatch(frame: frame, realm: realm)
-        while stack.count > regBase { _ = stack.removeLast() }
-        return res
-    }
-
-    func dispatch(frame: CallFrame, realm: object.Realm) throws -> value.Value {
-        let instrs = frame.fn.Instructions
-        let constants = frame.fn.Constants
-        let rBase = frame.registerBase
-
-        while frame.pc < instrs.count {
-            let instr = instrs[frame.pc]
-            frame.pc += 1
-
-            switch instr.Op {
-            case .ldaUndefined:
-                acc = value.Value.Undefined
-
-            case .ldaNull:
-                acc = value.Value.Null
-
-            case .ldaTrue:
-                acc = value.Value.True
-
-            case .ldaFalse:
-                acc = value.Value.False
-
-            case .ldaZero:
-                acc = value.Value.Int(0)
-
-            case .ldaInt32:
-                acc = value.Value.Int(instr.Imm)
-
-            case .ldaConstant:
-                let idx = Int(instr.Imm)
-                if idx < constants.count {
-                    switch constants[idx] {
-                    case .stringVal(let s):
-                        acc = value.Value.String(s)
-                    case .numberVal(let n):
-                        acc = value.Value.Number(n)
-                    case .boolVal(let b):
-                        acc = value.Value.Boolean(b)
-                    case .fnVal(let code):
-                        let jsFn = realm.NewBytecodeFunction(code)
-                        acc = value.Value.Object(jsFn)
-                    }
-                }
-
-            case .ldar:
-                let rIdx = rBase + Int(instr.R0)
-                if rIdx < stack.count {
-                    acc = stack[rIdx]
-                }
-
-            case .star:
-                let rIdx = rBase + Int(instr.R0)
-                while stack.count <= rIdx {
-                    stack.append(value.Value.Undefined)
-                }
-                stack[rIdx] = acc
-
-            case .mov:
-                let srcIdx = rBase + Int(instr.R0)
-                let dstIdx = rBase + Int(instr.R1)
-                while stack.count <= dstIdx {
-                    stack.append(value.Value.Undefined)
-                }
-                stack[dstIdx] = (srcIdx < stack.count) ? stack[srcIdx] : value.Value.Undefined
-
-            case .ldaGlobal:
-                let idx = Int(instr.Imm)
-                if idx < constants.count, case .stringVal(let name) = constants[idx] {
-                    acc = realm.GlobalObject.Get(name)
-                }
-
-            case .staGlobal:
-                let idx = Int(instr.Imm)
-                if idx < constants.count, case .stringVal(let name) = constants[idx] {
-                    realm.GlobalObject.Set(name, acc)
-                }
-
-            case .ldaNamedProperty:
-                let rIdx = rBase + Int(instr.R0)
-                let objVal = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                let idx = Int(instr.Imm)
-                if let obj = objVal.ObjVal as? object.JSObject, idx < constants.count, case .stringVal(let prop) = constants[idx] {
-                    acc = obj.Get(prop)
-                } else if objVal.IsString, idx < constants.count, case .stringVal(let prop) = constants[idx] {
-                    if prop == "length" {
-                        acc = value.Value.Int(int32(objVal.StrVal.count))
+                    depth += 1
+                    frames.append(callee)
+                    object.SetCurrentRealm(callee.realm)
+                case .returned(let v):
+                    if frames.count - 1 == bottom { return exit }
+                    let done = frames.removeLast()
+                    depth -= 1
+                    let caller = frames[frames.count - 1]
+                    object.SetCurrentRealm(caller.realm)
+                    if let obj = done.constructed {
+                        if v.IsObject {
+                            caller.acc = v
+                        } else if done.t.IsClassConstructor && !v.IsUndefined {
+                            caller.pc -= 1
+                            throw object.ThrowTypeError("Class constructors may only return object or undefined")
+                        } else {
+                            caller.acc = .object(obj)
+                        }
                     } else {
-                        acc = value.Value.Undefined
+                        caller.acc = v
                     }
-                } else {
-                    acc = value.Value.Undefined
+                default:
+                    return exit
                 }
-
-            case .staNamedProperty:
-                let rIdx = rBase + Int(instr.R0)
-                let objVal = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                let idx = Int(instr.Imm)
-                if let obj = objVal.ObjVal as? object.JSObject, idx < constants.count, case .stringVal(let prop) = constants[idx] {
-                    obj.Set(prop, acc)
-                }
-
-            case .ldaKeyedProperty:
-                let rIdx = rBase + Int(instr.R0)
-                let objVal = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                if let obj = objVal.ObjVal as? object.JSObject {
-                    if acc.IsNumber {
-                        acc = obj.GetElement(Int(acc.ToInt32()))
-                    } else {
-                        acc = obj.Get(acc.ToString())
-                    }
-                } else {
-                    acc = value.Value.Undefined
-                }
-
-            case .staKeyedProperty:
-                let rIdx = rBase + Int(instr.R0)
-                let kIdx = rBase + Int(instr.R1)
-                let objVal = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                let keyVal = (kIdx < stack.count) ? stack[kIdx] : value.Value.Undefined
-                if let obj = objVal.ObjVal as? object.JSObject {
-                    if keyVal.IsNumber {
-                        obj.SetElement(Int(keyVal.ToInt32()), acc)
-                    } else {
-                        obj.Set(keyVal.ToString(), acc)
-                    }
-                }
-
-            case .ldaContextSlot, .staContextSlot:
-                // Context slot placeholder
-                break
-
-            case .add:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                if left.IsString || acc.IsString {
-                    acc = value.Value.String(left.ToString() + acc.ToString())
-                } else if left.Type == .int32 && acc.Type == .int32 {
-                    let sum = int64(left.IntVal) + int64(acc.IntVal)
-                    if sum >= int64(int32.min) && sum <= int64(int32.max) {
-                        acc = value.Value.Int(int32(sum))
-                    } else {
-                        acc = value.Value.Number(float64(sum))
-                    }
-                } else {
-                    acc = value.Value.Number(left.ToNumber() + acc.ToNumber())
-                }
-
-            case .sub:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                if left.Type == .int32 && acc.Type == .int32 {
-                    acc = value.Value.Int(left.IntVal - acc.IntVal)
-                } else {
-                    acc = value.Value.Number(left.ToNumber() - acc.ToNumber())
-                }
-
-            case .mul:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                if left.Type == .int32 && acc.Type == .int32 {
-                    acc = value.Value.Int(left.IntVal * acc.IntVal)
-                } else {
-                    acc = value.Value.Number(left.ToNumber() * acc.ToNumber())
-                }
-
-            case .div:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                let denom = acc.ToNumber()
-                if denom == 0.0 {
-                    acc = value.Value.Number(left.ToNumber() >= 0 ? float64.infinity : -float64.infinity)
-                } else {
-                    acc = value.Value.Number(left.ToNumber() / denom)
-                }
-
-            case .mod:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                if left.Type == .int32 && acc.Type == .int32 && acc.IntVal != 0 {
-                    acc = value.Value.Int(left.IntVal % acc.IntVal)
-                } else {
-                    acc = value.Value.Number(left.ToNumber().truncatingRemainder(dividingBy: acc.ToNumber()))
-                }
-
-            case .exp:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                let baseVal = left.ToNumber()
-                let expVal = acc.ToNumber()
-                acc = value.Value.Number(power(baseVal, expVal))
-
-            case .bitAnd:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                acc = value.Value.Int(left.ToInt32() & acc.ToInt32())
-
-            case .bitOr:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                acc = value.Value.Int(left.ToInt32() | acc.ToInt32())
-
-            case .bitXor:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                acc = value.Value.Int(left.ToInt32() ^ acc.ToInt32())
-
-            case .shiftLeft:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                let shiftCount = Int(acc.ToUint32() & 0x1F)
-                let lval = Int(left.ToInt32())
-                let res = lval << shiftCount
-                acc = value.Value.Int(int32(res))
-
-            case .shiftRight:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                let shiftCount = Int(acc.ToUint32() & 0x1F)
-                let lval = Int(left.ToInt32())
-                let res = lval >> shiftCount
-                acc = value.Value.Int(int32(res))
-
-            case .shiftRightLogical:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                let shiftCount = Int(acc.ToUint32() & 0x1F)
-                let lval = Int(left.ToInt32())
-                if shiftCount == 0 {
-                    let d = lval >= 0 ? float64(lval) : float64(lval) + 4294967296.0
-                    acc = value.Value.Number(d)
-                } else if lval >= 0 {
-                    let res = lval >> shiftCount
-                    acc = value.Value.Number(float64(res))
-                } else {
-                    let half = (lval >> 1) & 0x7FFFFFFF
-                    let res = half >> (shiftCount - 1)
-                    acc = value.Value.Number(float64(res))
-                }
-
-            case .negate:
-                if acc.Type == .int32 {
-                    acc = value.Value.Int(-acc.IntVal)
-                } else {
-                    acc = value.Value.Number(-acc.ToNumber())
-                }
-
-            case .bitwiseNot:
-                acc = value.Value.Int(~acc.ToInt32())
-
-            case .toBooleanLogicalNot:
-                acc = value.Value.Boolean(!acc.ToBoolean())
-
-            case .typeOf:
-                switch acc.Type {
-                case .undefined: acc = value.Value.String("undefined")
-                case .null: acc = value.Value.String("object")
-                case .boolean: acc = value.Value.String("boolean")
-                case .int32, .number: acc = value.Value.String("number")
-                case .string: acc = value.Value.String("string")
-                case .symbol: acc = value.Value.String("symbol")
-                case .object:
-                    if let obj = acc.ObjVal as? object.JSObject, obj.Callable != nil {
-                        acc = value.Value.String("function")
-                    } else {
-                        acc = value.Value.String("object")
-                    }
-                }
-
-            case .testEqual:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                acc = value.Value.Boolean(value.AbstractEquals(left, acc))
-
-            case .testStrictEqual:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                acc = value.Value.Boolean(value.StrictEquals(left, acc))
-
-            case .testNotEqual:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                acc = value.Value.Boolean(!value.AbstractEquals(left, acc))
-
-            case .testStrictNotEqual:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                acc = value.Value.Boolean(!value.StrictEquals(left, acc))
-
-            case .testLessThan:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                if left.IsString && acc.IsString {
-                    acc = value.Value.Boolean(left.StrVal < acc.StrVal)
-                } else {
-                    acc = value.Value.Boolean(left.ToNumber() < acc.ToNumber())
-                }
-
-            case .testGreaterThan:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                if left.IsString && acc.IsString {
-                    acc = value.Value.Boolean(left.StrVal > acc.StrVal)
-                } else {
-                    acc = value.Value.Boolean(left.ToNumber() > acc.ToNumber())
-                }
-
-            case .testLessThanOrEqual:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                if left.IsString && acc.IsString {
-                    acc = value.Value.Boolean(left.StrVal <= acc.StrVal)
-                } else {
-                    acc = value.Value.Boolean(left.ToNumber() <= acc.ToNumber())
-                }
-
-            case .testGreaterThanOrEqual:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                if left.IsString && acc.IsString {
-                    acc = value.Value.Boolean(left.StrVal >= acc.StrVal)
-                } else {
-                    acc = value.Value.Boolean(left.ToNumber() >= acc.ToNumber())
-                }
-
-            case .testIn:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                if let obj = acc.ObjVal as? object.JSObject {
-                    acc = value.Value.Boolean(obj.Has(left.ToString()))
-                } else {
-                    throw VMError.error("TypeError: Cannot use 'in' operator to search in primitive")
-                }
-
-            case .testInstanceOf:
-                let rIdx = rBase + Int(instr.R0)
-                let left = (rIdx < stack.count) ? stack[rIdx] : value.Value.Undefined
-                var result = false
-                if left.IsObject, let ctorObj = acc.ObjVal as? object.JSObject {
-                    let targetProto = ctorObj.Get("prototype")
-                    if targetProto.IsObject, let protoObj = targetProto.ObjVal as? object.JSObject {
-                        var cur = (left.ObjVal as? object.JSObject)?.Prototype
-                        while let p = cur {
-                            if p === protoObj {
-                                result = true
-                                break
-                            }
-                            cur = p.Prototype
+            } catch let c as object.Completion {
+                var cur = frames[frames.count - 1]
+                while true {
+                    if let h = findHandler(cur) {
+                        while cur.ctxDepth > h.ContextDepth {
+                            cur.ctx = cur.ctx?.Parent
+                            cur.ctxDepth -= 1
                         }
+                        cur.acc = c.Value
+                        cur.pc = h.Target
+                        break
                     }
-                }
-                acc = value.Value.Boolean(result)
-
-            case .jump:
-                frame.pc = (frame.pc - 1) + Int(instr.Offset)
-
-            case .jumpIfTrue:
-                if acc.ToBoolean() {
-                    frame.pc = (frame.pc - 1) + Int(instr.Offset)
-                }
-
-            case .jumpIfFalse:
-                if !acc.ToBoolean() {
-                    frame.pc = (frame.pc - 1) + Int(instr.Offset)
-                }
-
-            case .jumpIfNull:
-                if acc.IsNull {
-                    frame.pc = (frame.pc - 1) + Int(instr.Offset)
-                }
-
-            case .jumpIfUndefined:
-                if acc.IsUndefined {
-                    frame.pc = (frame.pc - 1) + Int(instr.Offset)
-                }
-
-            case .jumpIfNotUndefined:
-                if !acc.IsUndefined {
-                    frame.pc = (frame.pc - 1) + Int(instr.Offset)
-                }
-
-            case .call:
-                let calleeIdx = rBase + Int(instr.R0)
-                let recvIdx = rBase + Int(instr.R1)
-                let calleeVal = (calleeIdx < stack.count) ? stack[calleeIdx] : value.Value.Undefined
-                let recvVal = (recvIdx < stack.count) ? stack[recvIdx] : value.Value.Undefined
-                let argCount = Int(instr.Imm)
-                var callArgs: [value.Value] = []
-                for i in 0..<argCount {
-                    let aIdx = rBase + Int(instr.R2) + i
-                    callArgs.append((aIdx < stack.count) ? stack[aIdx] : value.Value.Undefined)
-                }
-                if let obj = calleeVal.ObjVal as? object.JSObject, let callable = obj.Callable {
-                    switch callable {
-                    case .native(let cb):
-                        acc = try cb(realm, recvVal, callArgs)
-                    case .bytecode(let code):
-                        acc = try Run(code, realm: realm, thisValue: recvVal, args: callArgs)
-                    }
-                } else {
-                    throw VMError.error("TypeError: \(calleeVal) is not a function")
-                }
-
-            case .callProperty:
-                acc = value.Value.Undefined
-
-            case .construct:
-                let calleeIdx = rBase + Int(instr.R0)
-                let calleeVal = (calleeIdx < stack.count) ? stack[calleeIdx] : value.Value.Undefined
-                let argCount = Int(instr.Imm)
-                var callArgs: [value.Value] = []
-                for a in 0..<argCount {
-                    let aIdx = rBase + Int(instr.R2) + a
-                    if aIdx < stack.count {
-                        callArgs.append(stack[aIdx])
-                    }
-                }
-                if let obj = calleeVal.ObjVal as? object.JSObject, let callable = obj.Callable {
-                    switch callable {
-                    case .native(let cb):
-                        acc = try cb(realm, value.Value.Undefined, callArgs)
-                    case .bytecode(let code):
-                        let instance = realm.NewObject()
-                        if let proto = obj.Get("prototype").ObjVal as? object.JSObject {
-                            instance.Prototype = proto
-                        }
-                        let res = try Run(code, realm: realm, thisValue: value.Value.Object(instance), args: callArgs)
-                        acc = (res.Type == .object && res.ObjVal != nil) ? res : value.Value.Object(instance)
-                    }
-                } else {
-                    throw VMError.error("TypeError: \(calleeVal) is not a constructor")
-                }
-
-            case .returnOp:
-                if let rec = frame.genRecord {
-                    rec.isDone = true
-                    let resObj = realm.NewObject()
-                    resObj.Set("value", acc)
-                    resObj.Set("done", value.Value.Boolean(true))
-                    return value.Value.Object(resObj)
-                }
-                return acc
-
-            case .throwOp:
-                throw VMError.error(acc.ToString())
-
-            case .awaitOp:
-                if acc.IsObject, let obj = acc.ObjVal as? object.JSObject {
-                    let thenProp = obj.Get("then")
-                    if thenProp.IsObject, let thenFn = thenProp.ObjVal as? object.JSObject, thenFn.Callable != nil {
-                        var settled = false
-                        var fulfilledVal = value.Value.Undefined
-                        var rejectedErr: value.Value? = nil
-
-                        let onFulfill = realm.NewFunction(name: "awaitFulfill") { _, _, args in
-                            settled = true
-                            fulfilledVal = args.isEmpty ? value.Value.Undefined : args[0]
-                            return value.Value.Undefined
-                        }
-                        let onReject = realm.NewFunction(name: "awaitReject") { _, _, args in
-                            settled = true
-                            rejectedErr = args.isEmpty ? value.Value.Undefined : args[0]
-                            return value.Value.Undefined
-                        }
-
-                        _ = try realm.Call(thenFn, thisVal: acc, args: [value.Value.Object(onFulfill), value.Value.Object(onReject)])
-                        realm.RunJobs()
-
-                        if let err = rejectedErr {
-                            throw VMError.error(err.ToString())
-                        }
-                        if settled {
-                            acc = fulfilledVal
-                        }
-                    }
-                }
-
-            case .yieldOp:
-                if let rec = frame.genRecord {
-                    rec.pc = frame.pc
-                    rec.savedStack = []
-                    for i in rBase..<stack.count {
-                        rec.savedStack.append(stack[i])
-                    }
-                    let resObj = realm.NewObject()
-                    resObj.Set("value", acc)
-                    resObj.Set("done", value.Value.Boolean(false))
-                    return value.Value.Object(resObj)
-                }
-
-            case .createObjectLiteral:
-                let obj = realm.NewObject()
-                acc = value.Value.Object(obj)
-
-            case .createArrayLiteral:
-                let arr = realm.NewArray()
-                acc = value.Value.Object(arr)
-
-            case .createClosure:
-                let idx = Int(instr.Imm)
-                if idx < constants.count, case .fnVal(let code) = constants[idx] {
-                    let jsFn = realm.NewBytecodeFunction(code)
-                    acc = value.Value.Object(jsFn)
-                }
-
-            case .setProto:
-                let rIdx = rBase + Int(instr.R0)
-                if rIdx < stack.count, let target = stack[rIdx].ObjVal as? object.JSObject {
-                    if acc.IsNull {
-                        target.Prototype = nil
-                    } else if let proto = acc.ObjVal as? object.JSObject {
-                        target.Prototype = proto
-                    }
-                }
-
-            case .callWithSpread:
-                let calleeIdx = rBase + Int(instr.R0)
-                let recvIdx = rBase + Int(instr.R1)
-                let argsArrIdx = rBase + Int(instr.R2)
-                let calleeVal = (calleeIdx < stack.count) ? stack[calleeIdx] : value.Value.Undefined
-                let recvVal = (recvIdx < stack.count) ? stack[recvIdx] : value.Value.Undefined
-                var callArgs: [value.Value] = []
-                if argsArrIdx < stack.count, let arrObj = stack[argsArrIdx].ObjVal as? object.JSObject {
-                    callArgs = arrObj.Elements
-                }
-                if let obj = calleeVal.ObjVal as? object.JSObject, let callable = obj.Callable {
-                    switch callable {
-                    case .native(let cb):
-                        acc = try cb(realm, recvVal, callArgs)
-                    case .bytecode(let code):
-                        acc = try Run(code, realm: realm, thisValue: recvVal, args: callArgs)
-                    }
-                } else {
-                    throw VMError.error("TypeError: \(calleeVal) is not a function")
-                }
-
-            case .appendArrayElement:
-                let rIdx = rBase + Int(instr.R0)
-                if rIdx < stack.count, let arr = stack[rIdx].ObjVal as? object.JSObject {
-                    arr.SetElement(arr.Elements.count, acc)
-                }
-
-            case .spreadIntoArray:
-                let rIdx = rBase + Int(instr.R0)
-                if rIdx < stack.count, let dest = stack[rIdx].ObjVal as? object.JSObject {
-                    if let src = acc.ObjVal as? object.JSObject {
-                        for el in src.Elements {
-                            dest.SetElement(dest.Elements.count, el)
-                        }
-                    }
-                }
-
-            case .spreadIntoObject:
-                let rIdx = rBase + Int(instr.R0)
-                if rIdx < stack.count, let dest = stack[rIdx].ObjVal as? object.JSObject {
-                    if let src = acc.ObjVal as? object.JSObject {
-                        for k in src.Keys {
-                            dest.Set(k, src.Get(k))
-                        }
-                    }
-                }
-
-            case .sliceArrayFrom:
-                let rIdx = rBase + Int(instr.R0)
-                let start = Int(instr.Imm)
-                var restElements: [value.Value] = []
-                if rIdx < stack.count, let src = stack[rIdx].ObjVal as? object.JSObject {
-                    let elCount = src.Elements.count
-                    if start < elCount {
-                        for i in start..<elCount {
-                            restElements.append(src.Elements[i])
-                        }
-                    }
-                }
-                acc = value.Value.Object(realm.NewArray(elements: restElements))
-
-            case .deleteNamedProperty:
-                let rIdx = rBase + Int(instr.R0)
-                let idx = Int(instr.Imm)
-                if rIdx < stack.count, let obj = stack[rIdx].ObjVal as? object.JSObject, idx < constants.count, case .stringVal(let prop) = constants[idx] {
-                    _ = obj.Delete(prop)
+                    if frames.count - 1 == bottom { throw c }
+                    _ = frames.removeLast()
+                    depth -= 1
+                    cur = frames[frames.count - 1]
+                    // Back to the call instruction, for its handler.
+                    cur.pc -= 1
+                    object.SetCurrentRealm(cur.realm)
                 }
             }
         }
-
-        if let rec = frame.genRecord {
-            rec.isDone = true
-            let resObj = realm.NewObject()
-            resObj.Set("value", acc)
-            resObj.Set("done", value.Value.Boolean(true))
-            return value.Value.Object(resObj)
-        }
-        return acc
     }
 
-    func power(_ base: float64, _ exp: float64) -> float64 {
-        if exp == 0.0 { return 1.0 }
-        if exp == 1.0 { return base }
-        if exp == 2.0 { return base * base }
-        var result = 1.0
-        var b = base
-        var e = int64(exp)
-        if float64(e) == exp && e > 0 {
-            while e > 0 {
-                if (e & 1) == 1 { result *= b }
-                b *= b
-                e >>= 1
+    func findHandler(_ f: Frame) -> bytecode.Handler? {
+        let pc = f.pc
+        for h in f.t.Handlers {
+            if pc >= h.Start && pc < h.End { return h }
+        }
+        return nil
+    }
+
+    /// complete runs a frame that must return.
+    func complete(_ f: Frame) throws -> Value {
+        switch try run(f) {
+        case .returned(let v): return v
+        default: return .undefined
+        }
+    }
+
+    // MARK: object.Engine
+
+    public func CallFunction(_ fn: object.JSFunction, _ this: Value, _ args: [Value]) throws -> Value {
+        let t = fn.Template
+        depth += 1
+        defer { depth -= 1 }
+        if depth > MaxDepth {
+            throw object.ThrowRangeError("Maximum call stack size exceeded")
+        }
+        let f = makeFrame(fn, this: thisFor(fn, this), args: args, newTarget: .undefined)
+        if t.IsGenerator {
+            return try startGenerator(f, async: t.IsAsync)
+        }
+        if t.IsAsync {
+            return try startAsync(f)
+        }
+        return try complete(f)
+    }
+
+    public func ConstructFunction(_ fn: object.JSFunction, _ args: [Value], _ newTarget: object.JSObject) throws -> Value {
+        let t = fn.Template
+        depth += 1
+        defer { depth -= 1 }
+        if depth > MaxDepth {
+            throw object.ThrowRangeError("Maximum call stack size exceeded")
+        }
+        if t.Kind == .derivedConstructor {
+            let f = makeFrame(fn, this: .empty, args: args, newTarget: .object(newTarget))
+            let r = try complete(f)
+            if r.IsObject { return r }
+            if !r.IsUndefined {
+                throw object.ThrowTypeError("Derived constructors may only return object or undefined")
             }
-            return result
+            let thisV = f.funcEnv!.This
+            if thisV.IsEmpty {
+                throw object.ThrowReferenceError("Must call super constructor in derived class before accessing 'this' or returning from derived constructor")
+            }
+            return thisV
         }
-        return base // fallback
+        let proto = try object.GetPrototypeFromConstructor(newTarget, fn.Realm.ObjectPrototype)
+        let obj = object.JSObject(proto: proto)
+        if t.IsClassConstructor {
+            try initializeInstanceElements(obj, fn)
+        }
+        let f = makeFrame(fn, this: .object(obj), args: args, newTarget: .object(newTarget))
+        let r = try complete(f)
+        if r.IsObject { return r }
+        if t.IsClassConstructor && !r.IsUndefined {
+            throw object.ThrowTypeError("Class constructors may only return object or undefined")
+        }
+        return .object(obj)
     }
+
+    public func StackTrace() -> string {
+        var out = ""
+        var i = frames.count - 1
+        var n = 0
+        while i >= 0 && n < 10 {
+            let f = frames[i]
+            let t = f.t
+            var name = t.Name.String
+            if name.isEmpty {
+                name = t.Kind == .script || t.Kind == .eval ? "" : "<anonymous>"
+            }
+            let file = t.Source?.Filename ?? ""
+            let line = t.LineAt(f.pc)
+            if !out.isEmpty { out += "\n" }
+            if name.isEmpty {
+                out += "    at \(file):\(line)"
+            } else {
+                out += "    at \(name) (\(file):\(line))"
+            }
+            i -= 1
+            n += 1
+        }
+        return out
+    }
+
+    // MARK: frames
+
+    /// thisFor is OrdinaryCallBindThis's this: a sloppy function sees the
+    /// global object for null and undefined, and wrappers for primitives.
+    func thisFor(_ fn: object.JSFunction, _ this: Value) -> Value {
+        let t = fn.Template
+        if t.Strict || t.IsArrow { return this }
+        switch this {
+        case .undefined, .null, .empty:
+            return .object(fn.Realm.Global)
+        case .object:
+            return this
+        default:
+            if let o = try? object.ToObject(this) { return .object(o) }
+            return this
+        }
+    }
+
+    func makeFrame(_ fn: object.JSFunction, this: Value, args: [Value], newTarget: Value) -> Frame {
+        let t = fn.Template
+        var ctx = fn.Env
+        if t.FunctionScope >= 0 {
+            ctx = object.Context(slots: t.FunctionContextSlots, parent: fn.Env, info: t.Scopes[t.FunctionScope])
+        }
+        let f = Frame(t: t, fn: fn, args: args, this: this, newTarget: newTarget, ctx: ctx, realm: fn.Realm)
+        if t.IsArrow {
+            f.funcEnv = fn.FuncEnv
+            if let fe = fn.FuncEnv {
+                f.this = fe.This
+                f.newTarget = fe.NewTarget
+            }
+        } else if t.NeedsFunctionEnv {
+            f.funcEnv = object.FunctionEnv(this: this, newTarget: newTarget, function: fn)
+        }
+        return f
+    }
+
+    /// funcEnvOf gives a frame a function environment for an arrow created
+    /// in it, making one if the frame has none yet.
+    func funcEnvOf(_ f: Frame) -> object.FunctionEnv {
+        if let fe = f.funcEnv { return fe }
+        let fe = object.FunctionEnv(this: f.this, newTarget: f.newTarget, function: f.fn)
+        f.funcEnv = fe
+        return fe
+    }
+
+    /// thisOf is the frame's this binding, checked in derived constructors.
+    func thisOf(_ f: Frame) throws -> Value {
+        if let fe = f.funcEnv {
+            if fe.This.IsEmpty {
+                throw object.ThrowReferenceError("Must call super constructor in derived class before accessing 'this' or returning from derived constructor")
+            }
+            return fe.This
+        }
+        return f.this
+    }
+
+    /// activeFunction is the non-arrow function whose code is running:
+    /// the one super and new.target refer to.
+    func activeFunction(_ f: Frame) -> object.JSFunction? {
+        if let fe = f.funcEnv, let fn = fe.Function { return fn }
+        return f.fn
+    }
+
+    // MARK: classes
+
+    /// initializeInstanceElements is §7.3.34: private methods, then fields.
+    func initializeInstanceElements(_ obj: object.JSObject, _ ctor: object.JSFunction) throws {
+        for m in ctor.PrivateMethods {
+            if obj.PrivateFind(m.Name) >= 0 {
+                throw object.ThrowTypeError("Cannot initialize private methods of class \(ctor.Template.Name.String) twice on the same object")
+            }
+            installPrivateMethod(obj, m)
+        }
+        for field in ctor.Fields {
+            var v: Value = .undefined
+            if let initFn = field.Initializer {
+                v = try initFn.Call(.object(obj), [])
+            }
+            if field.Key.IsPrivate {
+                if obj.find(field.Key) >= 0 {
+                    throw object.ThrowTypeError("Cannot initialize \(field.Key.Debug) twice on the same object")
+                }
+                obj.store(field.Key, object.Slot(value: v, flags: 1))
+            } else {
+                try object.CreateDataPropertyOrThrow(obj, field.Key, v)
+            }
+        }
+    }
+
+    func installPrivateMethod(_ obj: object.JSObject, _ m: object.PrivateMethod) {
+        let key = value.PropertyKey.symbol(m.Name)
+        if let fn = m.Method {
+            obj.store(key, object.Slot(value: .object(fn), flags: 0))
+        } else {
+            var s = object.Slot(value: .undefined, flags: 8)
+            s.Getter = m.Getter
+            s.Setter = m.Setter
+            obj.store(key, s)
+        }
+    }
+
+    // MARK: calls
+
+    /// inlineCallee is the callee when a call can run on the frame stack:
+    /// an ordinary bytecode function of this engine (not a generator, an
+    /// async function, or a class constructor, which throws).
+    func inlineCallee(_ callee: Value) -> object.JSFunction? {
+        guard case .object(let o) = callee, let fn = o as? object.JSFunction else { return nil }
+        let t = fn.Template
+        if t.IsGenerator || t.IsAsync || t.IsClassConstructor { return nil }
+        guard let e = fn.Realm.Engine, e === self else { return nil }
+        return fn
+    }
+
+    /// inlineConstruct is the frame for `new callee(...args)` when it can run
+    /// on the frame stack: an ordinary function or base class constructor
+    /// of this engine. Derived constructors, whose this comes from super,
+    /// take the native path.
+    func inlineConstruct(_ callee: Value, _ args: [Value]) throws -> Frame? {
+        guard case .object(let o) = callee, let fn = o as? object.JSFunction, fn.IsConstructor else { return nil }
+        let t = fn.Template
+        if t.Kind == .derivedConstructor { return nil }
+        guard let e = fn.Realm.Engine, e === self else { return nil }
+        let proto = try object.GetPrototypeFromConstructor(fn, fn.Realm.ObjectPrototype)
+        let obj = object.JSObject(proto: proto)
+        if t.IsClassConstructor {
+            try initializeInstanceElements(obj, fn)
+        }
+        let f = makeFrame(fn, this: .object(obj), args: args, newTarget: .object(fn))
+        f.constructed = obj
+        return f
+    }
+
+    func callValue(_ f: Frame, _ callee: Value, _ this: Value, _ args: [Value]) throws -> Value {
+        guard case .object(let o) = callee, o.IsCallable else {
+            throw object.ThrowTypeError("\(calleeText(f)) is not a function")
+        }
+        return try o.Call(this, args)
+    }
+
+    func calleeText(_ f: Frame) -> string {
+        if let s = f.t.CalleeText[f.pc] { return s }
+        return "expression"
+    }
+
+    // MARK: running scripts
+
+    /// RunScript compiles nothing: it runs a compiled script's template in a realm.
+    public func RunScript(_ t: bytecode.FunctionTemplate, realm: object.Realm) throws -> Value {
+        let f = Frame(t: t, fn: nil, args: [], this: .object(realm.Global), newTarget: .undefined, ctx: nil, realm: realm)
+        return try complete(f)
+    }
+}
+
+let emptyString = str.JSString.Empty
+
+/// stackAddress is the address of a local: where the native stack is now.
+func stackAddress() -> uint {
+    var probe: int = 0
+    return withUnsafeMutablePointer(to: &probe) { p in uint(bitPattern: p) }
 }

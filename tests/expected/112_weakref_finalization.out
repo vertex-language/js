@@ -1,0 +1,5 @@
+true alive [object WeakRef]
+TypeError
+undefined true false
+TypeError
+[object FinalizationRegistry]

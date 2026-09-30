@@ -1,0 +1,16 @@
+null 2 -150 true true
+1 s null 0 true
+rejected SyntaxError
+rejected SyntaxError
+rejected SyntaxError
+rejected SyntaxError
+rejected SyntaxError
+rejected SyntaxError
+rejected SyntaxError
+rejected SyntaxError
+rejected SyntaxError
+rejected SyntaxError
+{"a":101,"b":{"c":102}}
+y|x|0|z|
+1 __proto__
+2 Infinity 😀

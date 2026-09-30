@@ -1,0 +1,16 @@
+Error msg true true true
+TypeError msg true true true
+RangeError msg true true true
+SyntaxError msg true true true
+ReferenceError msg true true true
+EvalError msg true true true
+URIError msg true true true
+true called
+inner reason false false
+true false true
+false
+string
+URIError
+RangeError
+RangeError
+SyntaxError

@@ -1,0 +1,8 @@
+caught TypeError async boom
+finally in async
+executor throw RangeError
+settles once first
+handled awaited reject
+self resolution TypeError
+chain fallback
+then throw in then

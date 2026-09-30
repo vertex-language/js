@@ -1,0 +1,6 @@
+true function
+withResolvers done
+try value 5
+try caught sync throw
+try args 5
+from thenable

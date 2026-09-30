@@ -1,0 +1,9 @@
+6 1 num undefined obj undefined nan zero fn
+string,number,object,function,number,number
+false 5 false
+updated
+s,object,function,number,number true
+0
+2
+TypeError
+3 [object Map]

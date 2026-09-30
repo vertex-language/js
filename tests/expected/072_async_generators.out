@@ -1,0 +1,6 @@
+ticker 0,1,2
+sync iterable p1,plain,p2
+{"value":0,"done":false} {"value":"stop","done":true} {"done":true}
+custom 21
+[object AsyncGenerator] function
+caught agen err

@@ -1,199 +1,191 @@
+// Package js is the JavaScript engine's embedding API: a Runtime is an
+// agent with one realm, every built-in installed, that evaluates scripts
+// and runs their jobs. Hosts (vjs, a web view) add their own globals --
+// console, timers, the DOM -- on top.
 package js
 
 import (
-    "gc"
-    "js/token"
-    "js/scanner"
-    "js/ast"
-    "js/parser"
-    "js/scope"
-    "js/printer"
-    "js/bytecode"
-    "js/codegen"
-    "js/value"
-    "js/str"
-    "js/object"
-    "js/ic"
-    "js/interp"
-    "js/builtin/global"
+    "js/builtin/control"
     "js/builtin/fundamental"
-    "js/builtin/numeric"
-    "js/builtin/text"
+    "js/builtin/global"
     "js/builtin/indexed"
     "js/builtin/keyed"
-    "js/builtin/structured"
     "js/builtin/memory"
-    "js/builtin/control"
-    "js/regexp"
+    "js/builtin/numeric"
+    "js/builtin/reflection"
+    "js/builtin/structured"
+    "js/builtin/text"
+    "js/bytecode"
+    "js/codegen"
+    "js/interp"
+    "js/object"
+    "js/parser"
+    "js/scope"
+    "js/str"
+    "js/value"
 )
 
-public typealias Value = value.Value
-public typealias JSObject = object.JSObject
-public typealias JSString = str.JSString
-public typealias Cell = gc.Cell
-public typealias Heap = gc.Heap
-public typealias Tracer = gc.Tracer
-public typealias ObjectHandle = gc.Handle<JSObject>
-public typealias HandleScope = gc.HandleScope
-
-/// Exception models a JavaScript runtime or compilation error surfaced to the host.
+/// Exception is a JavaScript exception that reached the host: the thrown
+/// value, and its message and stack as V8 would print them.
 public struct Exception: Error, CustomStringConvertible {
-    public let Message: string
-    public let Stack: string
+    public let Value: object.Value
 
-    public init(message: string, stack: string = "") {
-        self.Message = message
-        self.Stack = stack
+    public init(_ v: object.Value) {
+        self.Value = v
     }
 
-    public var description: string {
-        if Stack.isEmpty { return Message }
-        return "\(Message)\n\(Stack)"
+    /// Message is `Name: message` for an error object, or the value as a
+    /// string.
+    public var Message: string {
+        if case .object(let o) = Value, o.Kind == .error {
+            let n = (try? o.Get(value.PropertyKey.Named("name"), Value)) ?? .undefined
+            let m = (try? o.Get(value.PropertyKey.Named("message"), Value)) ?? .undefined
+            let name = n.IsUndefined ? "Error" : ((try? object.ToString(n).String) ?? "Error")
+            let msg = m.IsUndefined ? "" : ((try? object.ToString(m).String) ?? "")
+            return msg.isEmpty ? name : name + ": " + msg
+        }
+        return (try? object.ToString(Value).String) ?? object.Describe(Value)
     }
+
+    /// Stack is the error's stack property, when it has one.
+    public var Stack: string {
+        if case .object(let o) = Value, let s = try? o.Get(value.PropertyKey.Named("stack"), Value), case .string(let ss) = s {
+            return ss.String
+        }
+        return Message
+    }
+
+    public var description: string { return Message }
 }
 
-/// Realm represents an execution context with its own global object and built-in intrinsics.
-public final class Realm {
-    public let Inner: object.Realm
-    public let VM: interp.VM
-
-    public init(inner: object.Realm? = nil) {
-        let r = inner ?? object.Realm()
-        self.Inner = r
-        let vm = interp.VM()
-        self.VM = vm
-
-        // Connect VM execution stack with Realm Heap roots
-        r.Heap.Roots.AddProvider { [weak vm] in
-            guard let v = vm else { return [] }
-            return v.CollectRoots()
-        }
-
-        // Wire up VM CallHook so built-ins can invoke JS closures
-        r.CallHook = { [weak vm] realm, obj, thisVal, args in
-            guard let v = vm, let callable = obj.Callable else { return value.Value.Undefined }
-            switch callable {
-            case .native(let cb):
-                return try cb(realm, thisVal, args)
-            case .bytecode(let code):
-                return try v.Run(code, realm: realm, thisValue: thisVal, args: args)
-            }
-        }
-
-        // Register built-in packages into the realm
-        global.Register(into: r)
-        fundamental.Register(into: r)
-        numeric.Register(into: r)
-        text.Register(into: r)
-        indexed.Register(into: r)
-        keyed.Register(into: r)
-        structured.Register(into: r)
-        memory.Register(into: r)
-        control.Register(into: r)
-    }
-
-    public var Heap: gc.Heap {
-        return Inner.Heap
-    }
-
-    /// GC triggers an explicit garbage collection pass across all heap objects.
-    public func GC() {
-        Inner.Heap.Collect()
-    }
-
-    public var Global: object.JSObject {
-        return Inner.GlobalObject
-    }
-
-    /// NewObject creates a new JavaScript object associated with this realm.
-    public func NewObject() -> object.JSObject {
-        return Inner.NewObject()
-    }
-
-    /// NewArray creates a new JavaScript array object associated with this realm.
-    public func NewArray(elements: [value.Value] = []) -> object.JSObject {
-        return Inner.NewArray(elements: elements)
-    }
-
-    /// DefineFunction exposes a native host function to this Realm's global scope.
-    public func DefineFunction(_ name: string, _ callback: @escaping ([value.Value]) throws -> value.Value) {
-        let fn = Inner.NewFunction(name: name) { _, _, args in
-            return try callback(args)
-        }
-        Global.Set(name, value.Value.Object(fn))
-    }
-
-    /// Eval parses, compiles, and evaluates JavaScript source code.
-    public func Eval(_ source: string, filename: string = "<eval>") throws -> value.Value {
-        do {
-            let prog = try parser.ParseScript(source, filename: filename)
-            let code = try codegen.Compile(prog)
-            let res = try VM.Run(code, realm: Inner)
-            Inner.RunJobs()
-            return res
-        } catch let parseErr as parser.ParseError {
-            throw Exception(message: parseErr.description)
-        } catch let scopeErr as scope.ScopeError {
-            throw Exception(message: scopeErr.description)
-        } catch let vmErr as interp.VMError {
-            throw Exception(message: vmErr.description)
-        } catch {
-            throw Exception(message: "Evaluation failed: \(error)")
-        }
-    }
-
-    /// Call invokes a callable JavaScript Value with a this-argument and parameters.
-    public func Call(_ fnVal: value.Value, thisArg: value.Value = value.Value.Undefined, args: [value.Value] = []) throws -> value.Value {
-        guard let obj = fnVal.ObjVal as? object.JSObject, let callable = obj.Callable else {
-            throw Exception(message: "TypeError: \(fnVal) is not a function")
-        }
-        let res: value.Value
-        switch callable {
-        case .native(let cb):
-            res = try cb(Inner, thisArg, args)
-        case .bytecode(let code):
-            res = try VM.Run(code, realm: Inner, thisValue: thisArg, args: args)
-        }
-        Inner.RunJobs()
-        return res
-    }
-
-    /// RunJobs drains the pending microtask job queue in this realm.
-    public func RunJobs() {
-        Inner.RunJobs()
-    }
-}
-
-/// Agent coordinates execution contexts, the job queue, and hosts.
-public final class Agent {
-    var jobQueue: [() -> Void] = []
-    public var DefaultRealm: Realm
+/// Runtime is an agent and its realm, with the interpreter installed.
+public final class Runtime {
+    public let Agent: object.Agent
+    public let Realm: object.Realm
+    public let Engine: interp.Engine
 
     public init() {
-        self.DefaultRealm = Realm()
+        Agent = object.Agent()
+        Realm = object.Realm(agent: Agent)
+        Engine = interp.Engine()
+        object.SetCurrentRealm(Realm)
+        Engine.Install(Realm)
+        fundamental.Install(Realm)
+        global.Install(Realm)
+        indexed.Install(Realm)
+        control.Install(Realm)
+        numeric.Install(Realm)
+        text.Install(Realm)
+        keyed.Install(Realm)
+        reflection.Install(Realm)
+        structured.Install(Realm)
+        memory.Install(Realm)
+        installHostBasics()
     }
 
-    /// NewRealm creates a new isolated Realm within this Agent.
-    public func NewRealm() -> Realm {
-        return Realm()
+    /// installHostBasics defines what every JavaScript host has, though
+    /// ECMA-262 leaves it to the host: queueMicrotask (HTML's
+    /// WindowOrWorkerGlobalScope), which queues a job on the agent's
+    /// microtask queue.
+    func installHostBasics() {
+        let agent = Agent
+        let queue = Realm.Function("queueMicrotask", 1) { _, args, _ in
+            let cb: object.Value = args.count > 0 ? args[0] : .undefined
+            guard case .object(let fn) = cb, fn.IsCallable else {
+                throw object.ThrowTypeError("Failed to execute 'queueMicrotask': parameter 1 is not of type 'Function'.")
+            }
+            agent.Enqueue {
+                _ = try fn.Call(.undefined, [])
+            }
+            return .undefined
+        }
+        Define("queueMicrotask", .object(queue))
     }
 
-    /// EnqueueJob schedules a microtask to be run in the agent.
-    public func EnqueueJob(_ job: @escaping () -> Void) {
-        jobQueue.append(job)
-    }
+    /// Global is the global object.
+    public var Global: object.JSObject { return Realm.Global }
 
-    /// RunJobs empties the microtask queue.
-    public func RunJobs() {
-        while !jobQueue.isEmpty {
-            let job = jobQueue.removeFirst()
-            job()
+    /// Compile parses and compiles a script without running it; a syntax
+    /// error is thrown as the SyntaxError object a script would see.
+    public func Compile(_ source: string, filename: string = "<eval>") throws -> bytecode.FunctionTemplate {
+        do {
+            do {
+                let prog = try parser.ParseScript(source, filename: filename)
+                _ = try scope.Analyze(prog)
+                return try codegen.CompileScript(prog, source: bytecode.SourceText(filename: filename, text: source))
+            } catch let e as parser.ParseError {
+                throw object.ThrowSyntaxError(e.Message)
+            } catch let e as scope.ScopeError {
+                throw object.ThrowSyntaxError(e.Message)
+            } catch let e as codegen.CompileError {
+                throw object.ThrowSyntaxError(e.Message)
+            }
+        } catch let c as object.Completion {
+            throw Exception(c.Value)
         }
     }
-}
 
-/// Global convenience evaluation in a default agent realm.
-public func Eval(_ source: string) throws -> value.Value {
-    let agent = Agent()
-    return try agent.DefaultRealm.Eval(source)
+    /// Evaluate runs a script and returns its completion value. It does
+    /// not run the jobs the script queued; RunJobs does.
+    public func Evaluate(_ source: string, filename: string = "<eval>") throws -> object.Value {
+        let t = try Compile(source, filename: filename)
+        object.SetCurrentRealm(Realm)
+        do {
+            return try Engine.RunScript(t, realm: Realm)
+        } catch let c as object.Completion {
+            throw Exception(c.Value)
+        }
+    }
+
+    /// RunJobs runs promise jobs until none are left.
+    public func RunJobs() {
+        object.SetCurrentRealm(Realm)
+        Agent.RunJobs()
+    }
+
+    /// HasJobs says promise jobs are waiting.
+    public var HasJobs: bool { return Agent.HasJobs }
+
+    /// Call calls a function value, turning a throw into an Exception.
+    public func Call(_ f: object.Value, this: object.Value = .undefined, _ args: [object.Value]) throws -> object.Value {
+        object.SetCurrentRealm(Realm)
+        do {
+            return try object.Call(f, this, args)
+        } catch let c as object.Completion {
+            throw Exception(c.Value)
+        }
+    }
+
+    /// Define makes a global property, as a host's globals are made:
+    /// writable, configurable, and not enumerable.
+    public func Define(_ name: string, _ v: object.Value) {
+        Realm.DefineGlobal(name, v)
+    }
+
+    /// Function makes a built-in function the host implements.
+    public func Function(_ name: string, _ length: int, _ fn: @escaping object.NativeFn) -> object.NativeFunction {
+        return Realm.Function(name, length, fn)
+    }
+
+    /// DefineConsole defines a console whose log, info, warn, error and
+    /// debug join their arguments' strings with spaces and hand the line
+    /// to write. A host decides where it goes: a terminal, a devtools pane.
+    public func DefineConsole(_ write: @escaping (string) -> Void) {
+        let console = object.JSObject(proto: Realm.ObjectPrototype)
+        for name in ["log", "info", "warn", "error", "debug"] {
+            let fn = Function(name, 0) { _, args, _ in
+                var parts: [string] = []
+                for v in args { parts.append((try? object.ToString(v).String) ?? object.Describe(v)) }
+                write(parts.joined(separator: " "))
+                return .undefined
+            }
+            console.DefineData(object.Key(name), .object(fn), writable: true, enumerable: true, configurable: true)
+        }
+        Define("console", .object(console))
+    }
+
+    /// String makes a JavaScript string value.
+    public func StringValue(_ s: string) -> object.Value {
+        return .string(str.JSString.From(s))
+    }
 }

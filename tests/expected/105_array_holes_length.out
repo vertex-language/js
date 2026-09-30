@@ -1,0 +1,9 @@
+1 undefined
+6 false 1|||||f
+false true 1
+RangeError
+3 2,02,-1,1.5
+TypeError
+3 0 2
+4294967295
+4294967295

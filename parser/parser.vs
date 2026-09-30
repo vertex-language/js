@@ -118,6 +118,8 @@ final class Parser {
     var isModule: bool
     var inFunction: bool = false
     var inAsync: bool = false
+    /// inCaseClause is set while a case clause's own statements are parsed.
+    var inCaseClause: bool = false
     var inGenerator: bool = false
     var inClassFieldInit: bool = false
     var allowReturn: bool = false
@@ -381,6 +383,9 @@ final class Parser {
     // MARK: statements
 
     func parseStatementListItem() throws -> ast.Stmt {
+        // Only a case clause's own statements may not declare using.
+        let inCase = inCaseClause
+        inCaseClause = false
         switch tok.Kind {
         case .kFunction:
             return .functionDecl(try parseFunction(isAsync: false, isDeclaration: true, start: tok.Pos))
@@ -391,6 +396,14 @@ final class Parser {
         case .kLet:
             if isLetDeclaration() {
                 return .varDecl(try parseVarDecl(kind: .letKind, requireInit: true))
+            }
+        case .identifier:
+            if !inCase && isUsingDeclaration() {
+                return .varDecl(try parseUsingDecl(isAwait: false))
+            }
+        case .kAwait:
+            if !inCase && isAwaitUsingDeclaration() {
+                return .varDecl(try parseUsingDecl(isAwait: true))
             }
         case .kAsync:
             let p = peek()
@@ -413,6 +426,50 @@ final class Parser {
             break
         }
         return try parseStatement()
+    }
+
+    /// isUsingDeclaration: `using` starts a declaration when a binding
+    /// identifier follows on the same line (§14.3.1, ES2026).
+    func isUsingDeclaration() -> bool {
+        if tok.Kind != .identifier || tok.Escaped || tok.Text != "using" { return false }
+        let p = peek()
+        return isIdentifier(p) && !p.HasPrecedingLineBreak
+    }
+
+    /// isAwaitUsingDeclaration: `await using x`, all on one line, where
+    /// await is a keyword.
+    func isAwaitUsingDeclaration() -> bool {
+        if !(inAsync || (isModule && !inFunction)) { return false }
+        let p = peek()
+        if p.Kind != .identifier || p.Escaped || p.Text != "using" || p.HasPrecedingLineBreak { return false }
+        let p2 = peek2()
+        return isIdentifier(p2) && !p2.HasPrecedingLineBreak
+    }
+
+    /// parseUsingDecl parses `using` or `await using` declarations: plain
+    /// identifiers, each with an initializer.
+    func parseUsingDecl(isAwait: bool) throws -> ast.VarDecl {
+        let start = tok.Pos
+        if isAwait { try next() }
+        try next()
+        let kind: ast.DeclKind = isAwait ? .awaitUsingKind : .usingKind
+        var decls: [ast.Declarator] = []
+        while true {
+            if tok.Kind == .lBracket || tok.Kind == .lBrace {
+                throw error("using declarations may not have binding patterns", tok.Pos)
+            }
+            let target = try parseBindingTarget()
+            if case .identifier(let id) = target, id.Name == "let" {
+                throw error("let is disallowed as a lexically bound name", id.At)
+            }
+            if !(try eat(.assign)) {
+                throw error("Missing initializer in \(isAwait ? "await using" : "using") declaration", prevEnd)
+            }
+            decls.append(ast.Declarator(target: target, initExpr: try parseAssignment()))
+            if !(try eat(.comma)) { break }
+        }
+        try consumeSemicolon()
+        return ast.VarDecl(kind: kind, declarations: decls, at: start)
     }
 
     /// isLetDeclaration: let starts a declaration when an identifier, [ or
@@ -758,9 +815,14 @@ final class Parser {
                 if p.Kind == .lBracket || p.Kind == .lBrace || isIdentifier(p) || p.Kind == .kLet || p.Kind == .kYield || p.Kind == .kAwait {
                     declKind = .letKind
                 }
+            } else if isUsingDeclaration() && !(peek().Kind == .kOf && peek2().Kind != .assign) {
+                declKind = .usingKind
+            } else if isAwaitUsingDeclaration() {
+                declKind = .awaitUsingKind
             }
             if let kind = declKind {
                 let declStart = tok.Pos
+                if kind == .awaitUsingKind { try next() }
                 try next()
                 let savedIn = allowIn
                 allowIn = false
@@ -771,6 +833,9 @@ final class Parser {
                     let isOf = tok.Kind == .kOf
                     if decls.count != 1 {
                         throw error("Invalid left-hand side in for-\(isOf ? "of" : "in") loop: Must have a single binding.", declStart)
+                    }
+                    if kind.IsUsing && !isOf {
+                        throw error("using declarations are not allowed in for-in loops", declStart)
                     }
                     if decls[0].Init != nil {
                         // Annex B allows for (var x = 1 in o) in sloppy mode.
@@ -784,6 +849,7 @@ final class Parser {
                 for d in decls {
                     if d.Init == nil {
                         if kind == .constKind { throw error("Missing initializer in const declaration", prevEnd) }
+                        if kind.IsUsing { throw error("Missing initializer in using declaration", prevEnd) }
                         if !isIdentPattern(d.Target) { throw error("Missing initializer in destructuring declaration", prevEnd) }
                     }
                 }
@@ -889,6 +955,8 @@ final class Parser {
             var body: [ast.Stmt] = []
             while tok.Kind != .kCase && tok.Kind != .kDefault && tok.Kind != .rBrace {
                 if tok.Kind == .eof { throw unexpected() }
+                // using may not be declared directly in a case clause.
+                inCaseClause = true
                 body.append(try parseStatementListItem())
             }
             cases.append(ast.SwitchCase(test: test, body: body))

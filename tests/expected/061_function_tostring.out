@@ -1,0 +1,6 @@
+function add(a, b) { return a + b; }
+(x) => x * 2
+class A { m() { return 1; } }
+m() { return 1; }
+get g() { return 1; }
+true true

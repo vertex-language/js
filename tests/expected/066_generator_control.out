@@ -1,0 +1,11 @@
+cleanup
+{"value":"early","done":true} {"done":true}
+caught boom
+ok
+thrown out: x
+i1
+inner got X
+delegate returned inner-ret
+o1
+TypeError
+{"value":"from finally","done":false} {"value":"R","done":true}

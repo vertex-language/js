@@ -1,181 +1,154 @@
+// check-deps reads every package's imports and checks them against the
+// engine's layering: what each package may import from js. It fails on
+// an import outside its package's list, and on a package with no rule.
+//
+//     vsc run ./cmd/check-deps        (from the repository root)
+//
+// The layers, bottom up:
+//
+//   str, token, regexp/syntax      no js imports
+//   value                          str, token
+//   ast, scanner                   token
+//   parser, scope, printer         the front end below them
+//   regexp                         regexp/syntax
+//   bytecode                       str, value
+//   codegen                        the front end, bytecode
+//   object                         the runtime's base: str, value, bytecode
+//   interp                         object, and the front end and codegen (eval, new Function)
+//   builtin/*                      object and below, regexp, other built-ins; never interp or the compiler
+//   js                             the embedding API: anything
 package main
 
-// Dependency Layering Specification (§2.7)
-// Rule 1: The front end (token, scanner, ast, parser, scope, printer) imports nothing from runtime (value, object, interp, ic, str).
-// Rule 2: Built-ins (builtin/*) never import interp or the front end (parser, scanner, codegen).
-// Rule 3: interp never imports a built-in.
-// Rule 4: Nothing in js imports anything from web.
+import "fs"
 
-struct PackageRule {
-    var pkg: string
-    var allowedImports: [string]
-    var forbiddenPrefixes: [string]
+let frontEnd = ["js/token", "js/scanner", "js/ast", "js/parser", "js/scope"]
+let runtimeBase = ["js/str", "js/value", "js/token", "js/bytecode", "js/object"]
+
+/// allowed is each package's permitted js imports; a trailing / allows a prefix.
+let allowed: [string: [string]] = [
+    "js/str": [],
+    "js/token": [],
+    "js/regexp/syntax": [],
+    "js/value": ["js/str", "js/token"],
+    "js/ast": ["js/token"],
+    "js/scanner": ["js/token"],
+    "js/parser": ["js/token", "js/scanner", "js/ast"],
+    "js/scope": ["js/token", "js/ast"],
+    "js/printer": ["js/token", "js/ast"],
+    "js/regexp": ["js/regexp/syntax"],
+    "js/bytecode": ["js/str", "js/value"],
+    "js/codegen": frontEnd + ["js/bytecode", "js/str", "js/value"],
+    "js/object": ["js/str", "js/value", "js/bytecode"],
+    "js/interp": frontEnd + ["js/codegen", "js/bytecode", "js/str", "js/value", "js/object"],
+    "js/builtin/": runtimeBase + ["js/regexp", "js/regexp/syntax", "js/builtin/"],
+    "js": ["js/"],
+]
+
+func permits(_ list: [string], _ imp: string) -> bool {
+    for a in list {
+        if a == imp { return true }
+        if a.hasSuffix("/") && imp.hasPrefix(a) { return true }
+    }
+    return false
+}
+
+func ruleFor(_ pkg: string) -> [string]? {
+    if let r = allowed[pkg] { return r }
+    if pkg.hasPrefix("js/builtin/") { return allowed["js/builtin/"] }
+    return nil
+}
+
+/// quoted is the text between the first pair of double quotes in b.
+func quoted(_ b: [uint8]) -> string? {
+    var i = 0
+    while i < b.count && b[i] != 0x22 { i += 1 }
+    var j = i + 1
+    while j < b.count && b[j] != 0x22 { j += 1 }
+    if j >= b.count { return nil }
+    return string(decoding: Array(b[(i + 1)..<j]), as: UTF8.self)
+}
+
+func startsWith(_ b: [uint8], _ p: string) -> bool {
+    let q = [uint8](p.utf8)
+    if b.count < q.count { return false }
+    var i = 0
+    while i < q.count {
+        if b[i] != q[i] { return false }
+        i += 1
+    }
+    return true
+}
+
+/// imports reads the import paths of a source file.
+func imports(_ text: string) -> [string] {
+    var out: [string] = []
+    var inBlock = false
+    var line: [uint8] = []
+    var bytes = [uint8](text.utf8)
+    bytes.append(0x0A)
+    for c in bytes {
+        if c != 0x0A {
+            if !(line.isEmpty && (c == 0x20 || c == 0x09)) { line.append(c) }
+            continue
+        }
+        if inBlock {
+            if startsWith(line, ")") {
+                inBlock = false
+            } else if let q = quoted(line) {
+                out.append(q)
+            }
+        } else if startsWith(line, "import (") {
+            inBlock = true
+        } else if startsWith(line, "import \""), let q = quoted(line) {
+            out.append(q)
+        }
+        line = []
+    }
+    return out
 }
 
 func main() -> int32 {
-    print("=== Architecture Layering Checker (§2.7) ===")
-
-    let rules: [PackageRule] = [
-        PackageRule(
-            pkg: "js/token",
-            allowedImports: [],
-            forbiddenPrefixes: ["js/value", "js/object", "js/interp", "js/builtin", "web"]
-        ),
-        PackageRule(
-            pkg: "js/scanner",
-            allowedImports: ["js/token"],
-            forbiddenPrefixes: ["js/value", "js/object", "js/interp", "js/builtin", "web"]
-        ),
-        PackageRule(
-            pkg: "js/ast",
-            allowedImports: ["js/token"],
-            forbiddenPrefixes: ["js/value", "js/object", "js/interp", "js/builtin", "web"]
-        ),
-        PackageRule(
-            pkg: "js/parser",
-            allowedImports: ["js/token", "js/ast", "js/scanner"],
-            forbiddenPrefixes: ["js/value", "js/object", "js/interp", "js/builtin", "web"]
-        ),
-        PackageRule(
-            pkg: "js/scope",
-            allowedImports: ["js/ast", "js/token"],
-            forbiddenPrefixes: ["js/value", "js/object", "js/interp", "js/builtin", "web"]
-        ),
-        PackageRule(
-            pkg: "js/printer",
-            allowedImports: ["js/ast", "js/token"],
-            forbiddenPrefixes: ["js/value", "js/object", "js/interp", "js/builtin", "web"]
-        ),
-        PackageRule(
-            pkg: "js/bytecode",
-            allowedImports: ["js/token"],
-            forbiddenPrefixes: ["js/value", "js/object", "js/interp", "js/builtin", "web"]
-        ),
-        PackageRule(
-            pkg: "js/codegen",
-            allowedImports: ["js/ast", "js/token", "js/bytecode", "js/scope"],
-            forbiddenPrefixes: ["js/interp", "js/builtin", "web"]
-        ),
-        PackageRule(
-            pkg: "js/value",
-            allowedImports: [],
-            forbiddenPrefixes: ["js/interp", "js/builtin", "web"]
-        ),
-        PackageRule(
-            pkg: "js/str",
-            allowedImports: ["js/value"],
-            forbiddenPrefixes: ["js/interp", "js/builtin", "web"]
-        ),
-        PackageRule(
-            pkg: "js/object",
-            allowedImports: ["js/value", "js/str", "js/bytecode"],
-            forbiddenPrefixes: ["js/interp", "js/builtin", "web"]
-        ),
-        PackageRule(
-            pkg: "js/ic",
-            allowedImports: ["js/object", "js/value"],
-            forbiddenPrefixes: ["js/interp", "js/builtin", "web"]
-        ),
-        PackageRule(
-            pkg: "js/interp",
-            allowedImports: ["js/bytecode", "js/object", "js/ic", "js/value"],
-            forbiddenPrefixes: ["js/builtin", "js/parser", "js/scanner", "web"]
-        ),
-        PackageRule(
-            pkg: "js/builtin/global",
-            allowedImports: ["js/object", "js/value"],
-            forbiddenPrefixes: ["js/interp", "js/parser", "js/scanner", "web"]
-        ),
-        PackageRule(
-            pkg: "js/builtin/fundamental",
-            allowedImports: ["js/object", "js/value"],
-            forbiddenPrefixes: ["js/interp", "js/parser", "js/scanner", "web"]
-        ),
-        PackageRule(
-            pkg: "js/builtin/numeric",
-            allowedImports: ["js/object", "js/value"],
-            forbiddenPrefixes: ["js/interp", "js/parser", "js/scanner", "web"]
-        ),
-        PackageRule(
-            pkg: "js/builtin/text",
-            allowedImports: ["js/object", "js/value", "js/str", "js/regexp"],
-            forbiddenPrefixes: ["js/interp", "js/parser", "js/scanner", "web"]
-        ),
-        PackageRule(
-            pkg: "js/builtin/indexed",
-            allowedImports: ["js/object", "js/value"],
-            forbiddenPrefixes: ["js/interp", "js/parser", "js/scanner", "web"]
-        ),
-        PackageRule(
-            pkg: "js/builtin/keyed",
-            allowedImports: ["js/object", "js/value"],
-            forbiddenPrefixes: ["js/interp", "js/parser", "js/scanner", "web"]
-        ),
-        PackageRule(
-            pkg: "js/builtin/structured",
-            allowedImports: ["js/object", "js/value"],
-            forbiddenPrefixes: ["js/interp", "js/parser", "js/scanner", "web"]
-        ),
-        PackageRule(
-            pkg: "js/builtin/memory",
-            allowedImports: ["js/object", "js/value"],
-            forbiddenPrefixes: ["js/interp", "js/parser", "js/scanner", "web"]
-        ),
-        PackageRule(
-            pkg: "js/builtin/control",
-            allowedImports: ["js/object", "js/value"],
-            forbiddenPrefixes: ["js/interp", "js/parser", "js/scanner", "web"]
-        )
-    ]
-
-    var violations = 0
-
-    // Actual imports used in the current package sources
-    let actualImports: [string: [string]] = [
-        "js/token": [],
-        "js/scanner": ["js/token"],
-        "js/ast": ["js/token"],
-        "js/parser": ["js/token", "js/ast", "js/scanner"],
-        "js/scope": ["js/ast", "js/token"],
-        "js/printer": ["js/ast", "js/token"],
-        "js/bytecode": [],
-        "js/codegen": ["js/ast", "js/token", "js/bytecode", "js/scope"],
-        "js/value": [],
-        "js/str": ["js/value"],
-        "js/object": ["js/value", "js/str", "js/bytecode"],
-        "js/ic": ["js/object", "js/value"],
-        "js/interp": ["js/bytecode", "js/object", "js/ic", "js/value"],
-        "js/builtin/global": ["js/object", "js/value"],
-        "js/builtin/fundamental": ["js/object", "js/value"],
-        "js/builtin/numeric": ["js/object", "js/value"],
-        "js/builtin/text": ["js/object", "js/value", "js/str", "js/regexp"],
-        "js/builtin/indexed": ["js/object", "js/value"],
-        "js/builtin/keyed": ["js/object", "js/value"],
-        "js/builtin/structured": ["js/object", "js/value"],
-        "js/builtin/memory": ["js/object", "js/value"],
-        "js/builtin/control": ["js/object", "js/value"],
-        "js/regexp/syntax": [],
-        "js/regexp": ["js/regexp/syntax"]
-    ]
-
-    for rule in rules {
-        let imports = actualImports[rule.pkg] ?? []
-        for imp in imports {
-            for forbidden in rule.forbiddenPrefixes {
-                if imp == forbidden || imp.hasPrefix(forbidden + "/") {
-                    print("VIOLATION: \(rule.pkg) imports forbidden package \(imp)")
-                    violations += 1
-                }
+    var packages: [string: [string]] = [:]
+    func visit(_ dir: fs.Path, _ pkg: string) throws {
+        for e in try fs.ReadDir(dir) {
+            if e.Kind == .directory {
+                if pkg == "js" && (e.Name == "cmd" || e.Name == "tests") { continue }
+                if e.Name.hasPrefix(".") { continue }
+                try visit(e.Path, pkg + "/" + e.Name)
+            } else if e.Name.hasSuffix(".vs") {
+                var list = packages[pkg] ?? []
+                for i in imports(try fs.ReadText(e.Path)) where !list.contains(i) { list.append(i) }
+                packages[pkg] = list
             }
         }
     }
-
-    if violations == 0 {
-        print("All \(rules.count) package layering rules verified successfully.")
-        print("Layering check: PASSED")
-        return 0
-    } else {
-        print("Layering check: FAILED with \(violations) violations.")
+    do {
+        try visit(fs.Path("."), "js")
+    } catch {
+        print("check-deps: \(error)")
+        return 2
+    }
+    var violations = 0
+    for pkg in packages.keys.sorted() {
+        guard let rule = ruleFor(pkg) else {
+            print("VIOLATION: \(pkg) has no layering rule")
+            violations += 1
+            continue
+        }
+        for imp in packages[pkg]! {
+            if imp == "web" || imp.hasPrefix("web/") {
+                print("VIOLATION: \(pkg) imports \(imp): the engine knows nothing of the web")
+                violations += 1
+            } else if (imp == "js" || imp.hasPrefix("js/")) && !permits(rule, imp) {
+                print("VIOLATION: \(pkg) imports \(imp)")
+                violations += 1
+            }
+        }
+    }
+    if violations > 0 {
+        print("\(violations) layering violations")
         return 1
     }
+    print("ok: \(packages.count) packages follow the layering")
+    return 0
 }

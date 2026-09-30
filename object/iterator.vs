@@ -50,7 +50,7 @@ public func GetAsyncIterator(_ obj: Value) throws -> IteratorRecord {
     return try GetIteratorFromMethod(obj, m)
 }
 
-func GetMethodForIterator(_ obj: Value, _ key: PropertyKey) throws -> Value {
+func GetMethodForIterator(_ obj: Value, _ key: value.PropertyKey) throws -> Value {
     if obj.IsNullish || obj.IsEmpty {
         return .undefined
     }

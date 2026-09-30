@@ -1,0 +1,5 @@
+body > dispose b > dispose a
+dispose c,deferred true
+caught inner dispose x
+SuppressedError dispose err body err
+async disposed function

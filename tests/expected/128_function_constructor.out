@@ -1,0 +1,7 @@
+5 2 anonymous
+string:global
+5
+SyntaxError
+function anonymous( ) { }
+1,2 GeneratorFunction
+async ctor

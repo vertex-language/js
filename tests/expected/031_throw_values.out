@@ -1,0 +1,11 @@
+number 1
+string str
+object null
+undefined undefined
+boolean true
+42 obj
+3
+no binding
+true TypeError
+ReferenceError
+TypeError

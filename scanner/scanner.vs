@@ -372,7 +372,12 @@ public final class Scanner {
         }
         var digits: [uint8] = []
         var isInt = true
+        let intStart = pos
         scanDigits(&digits)
+        // A literal starting with 0 (0_1, 08_9) takes no separators.
+        if src[intStart] == 0x30 && pos - intStart > digits.count {
+            fail("Numeric separator can not be used after leading 0.", intStart + 1)
+        }
         if pos < src.count && src[pos] == 0x6E {
             pos += 1
             tok.Kind = .bigint

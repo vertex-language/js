@@ -1,0 +1,7 @@
+8 -2 65534 34 12 1.5 13330
+2 true false 4 2
+RangeError
+RangeError
+true 40
+18446744073709551615 -1
+TypeError

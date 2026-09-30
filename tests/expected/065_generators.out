@@ -1,0 +1,7 @@
+[{"value":0,"done":false},{"value":1,"done":false},{"value":"end","done":true},{"done":true}]
+a,b,c
+0,1,1,2,3,5,8,13,21,34
+function [object Generator] true
+1,2,3
+TypeError
+5 0

@@ -1,0 +1,5 @@
+1 10 default true true false
+undefined set b,get a,get b,get missing,delete a
+3 z,y
+TypeError
+TypeError

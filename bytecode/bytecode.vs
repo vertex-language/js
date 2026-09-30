@@ -73,6 +73,7 @@ public enum Opcode: Equatable {
     case defineMethod        // define method acc on r[A] for key r[B] (home object r[A]); C = 1 if enumerable
     case setFunctionName     // name the function in acc from key r[A]; B: 0 plain, 1 "get ", 2 "set "
     case setProto            // r[A].[[Prototype]] = acc, if acc is an object or null (__proto__: v)
+    case setHomeObject       // the function in acc gets home object r[A] (acc unchanged)
     case deleteProperty      // acc = delete r[A][acc]; B = 1 in strict code
     case getSuper            // acc = super[r[A]]
     case setSuper            // super[r[A]] = acc
@@ -179,6 +180,13 @@ public enum Opcode: Equatable {
     case yieldOp             // suspend with acc; on resume r[A] = mode (0 next, 1 throw, 2 return), r[B] = the value sent
     case awaitOp             // suspend until acc settles: acc = its value, or throw its reason
     case asyncReturnAwait    // for return in an async generator: await acc before returning
+
+    // Explicit resource management (ES2026).
+    case createDisposeScope  // r[A] = a new dispose capability
+    case addDisposable       // add acc (using x = acc) to r[A]'s resources; B is 1 for await using
+    case disposeNext         // dispose r[A]'s newest resource: acc = 0 when none are left, 1 when disposed, 2 when r[B] is to be awaited
+    case disposeError        // record acc as thrown in r[A]'s scope (combined as SuppressedError)
+    case disposeFinish       // throw the error r[A] recorded, if any
 
     // Modules.
     case importCall          // acc = import(acc)
@@ -344,6 +352,12 @@ public final class FunctionTemplate {
     public var Line: int = 0
     /// Lines maps instruction indexes to source lines: pairs of (pc, line).
     public var Lines: [int] = []
+    /// CalleeText renders the callee of the call or new at an instruction,
+    /// for "x is not a function".
+    public var CalleeText: [int: string] = [:]
+    /// MappedParams gives, per parameter, the function context slot a
+    /// sloppy mapped arguments object aliases (-1 for none).
+    public var MappedParams: [int] = []
 
     public init(name: str.JSString, kind: FunctionKind) {
         self.Name = name
@@ -376,13 +390,16 @@ public final class FunctionTemplate {
 
     /// SourceText is the function's source, for Function.prototype.toString.
     public var SourceString: string {
-        guard let s = Source else { return "" }
+        guard let s = Source, !s.Hidden else { return "" }
         return s.Slice(Start, End)
     }
 }
 
 /// SourceText is a script's text, shared by its functions.
 public final class SourceText {
+    /// Hidden is set on a built-in's self-hosted source: its functions
+    /// show [native code], as native ones do.
+    public var Hidden: bool = false
     public let Filename: string
     public let Bytes: [uint8]
 

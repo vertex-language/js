@@ -1,6 +1,7 @@
 package value
 
 import (
+    "math/big"
     "js/str"
     "js/token"
 )
@@ -160,7 +161,15 @@ public func NumberToRadixString(_ value: float64, _ radix: int) -> string {
             intDigits.append(chars[int(r)])
             ip = (ip - r) / float64(radix)
         }
-        reverseBytes(&intDigits)
+        var lo = 0
+        var hi = intDigits.count - 1
+        while lo < hi {
+            let t = intDigits[lo]
+            intDigits[lo] = intDigits[hi]
+            intDigits[hi] = t
+            lo += 1
+            hi -= 1
+        }
     }
     var out: [uint8] = []
     if neg { out.append(0x2D) }
@@ -196,16 +205,16 @@ func exactDecimal(_ d: float64) -> (digits: [uint8], point: int) {
         mant |= uint64(1) << 52
         e2 = exp - 1075
     }
-    var n = natFromUInt64(mant)
+    var n = big.Nat.FromU64(mant)
     var scale = 0 // value = n × 10^scale
     if e2 >= 0 {
-        n = natShiftLeft(n, e2)
+        n = big.ShiftLeft(n, e2)
     } else {
         // m / 2^k = m × 5^k / 10^k
-        n = natMul(n, natPow(5, -e2))
+        n = big.Mul(n, big.Pow(big.Nat.FromU32(5), -e2))
         scale = e2
     }
-    let s = natToString(n, 10)
+    let s = n.ToString(10)
     var digits = [uint8](s.utf8)
     let point = digits.count + scale
     while digits.count > 1 && digits[digits.count - 1] == 0x30 { _ = digits.removeLast() }
@@ -412,17 +421,18 @@ func parseNumericLiteral(_ b: [uint8]) -> float64 {
         if radix != 0 {
             var v: float64 = 0
             var i = 2
-            var big: [uint32] = []
-            var useBig = false
+            var digits: [uint8] = []
             while i < n {
                 let h = token.HexValue(uint32(b[i]))
                 if h < 0 || h >= radix { return float64.nan }
                 v = v * float64(radix) + float64(h)
-                big = natMulSmall(big, uint32(radix), add: uint32(h))
-                if v >= 9007199254740992 { useBig = true }
+                digits.append(b[i])
                 i += 1
             }
-            if useBig { return BigInt(negative: false, mag: big).ToDouble() }
+            if v >= 9007199254740992 {
+                // Past 2^53 the running sum rounds; convert exactly instead.
+                return big.Nat.Parse(string(decoding: digits, as: UTF8.self), radix: radix)!.ToFloat64()
+            }
             return v
         }
     }
@@ -539,7 +549,7 @@ public func ParseInt(_ s: str.JSString, _ radixIn: int) -> float64 {
     }
     let start = i
     var v: float64 = 0
-    var big: [uint32] = []
+    var digits: [uint8] = []
     while i < u.count {
         let d = token.HexValue(uint32(u[i]))
         var dv = d
@@ -549,11 +559,7 @@ public func ParseInt(_ s: str.JSString, _ radixIn: int) -> float64 {
         }
         if dv >= radix { break }
         v = v * float64(radix) + float64(dv)
-        if radix == 10 {
-            // Decimal digits are converted exactly below.
-        } else {
-            big = natMulSmall(big, uint32(radix), add: uint32(dv))
-        }
+        digits.append(uint8(u[i]))
         i += 1
     }
     if i == start { return float64.nan }
@@ -563,7 +569,8 @@ public func ParseInt(_ s: str.JSString, _ radixIn: int) -> float64 {
         while j < i { b.append(uint8(u[j])); j += 1 }
         v = float64(string(decoding: b, as: UTF8.self)) ?? v
     } else if v >= 9007199254740992 && (radix & (radix - 1)) == 0 {
-        v = BigInt(negative: false, mag: big).ToDouble()
+        // A power-of-two radix converts exactly, as V8 does.
+        v = big.Nat.Parse(string(decoding: digits, as: UTF8.self), radix: radix)!.ToFloat64()
     }
     return neg ? -v : v
 }

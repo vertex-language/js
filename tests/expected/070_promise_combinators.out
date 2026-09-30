@@ -1,0 +1,11 @@
+all empty 0
+finally on reject
+race fast
+any fails AggregateError 1,2
+recovered r
+all 1,b,c
+all rejects bad
+settled fulfilled:ok,rejected:no
+any win
+finally passthrough 1
+still rejected f

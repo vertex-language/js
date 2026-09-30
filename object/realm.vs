@@ -13,6 +13,11 @@ public func CurrentRealm() -> Realm {
     return currentRealmStorage!
 }
 
+/// CurrentRealmOrNil is the current realm, if code is running.
+public func CurrentRealmOrNil() -> Realm? {
+    return currentRealmStorage
+}
+
 public func SetCurrentRealm(_ r: Realm?) {
     currentRealmStorage = r
 }
@@ -135,10 +140,10 @@ public final class Realm {
         self.Agent = agent
         let op = JSObject(proto: nil)
         self.ObjectPrototype = op
-        let fp = JSObject(proto: op)
+        let fp = FunctionPrototypeObject(proto: op)
         fp.Kind = .function
         self.FunctionPrototype = fp
-        self.ArrayPrototype = JSObject(proto: op)
+        self.ArrayPrototype = ArrayObject(proto: op)
         self.ErrorPrototype = JSObject(proto: op)
         self.TypeErrorPrototype = JSObject(proto: op)
         self.RangeErrorPrototype = JSObject(proto: op)
@@ -193,6 +198,23 @@ public final class Realm {
         return NativeFunction(realm: self, name: name, length: length, fn)
     }
 
+    /// SelfHosted makes a built-in written in JavaScript. source is a
+    /// function expression, a factory, called once with helpers (native
+    /// functions standing in for the spec's abstract operations) and
+    /// returning the built-in. It runs while the realm is made, before any
+    /// script, so what it captures is the intrinsics, not what a script
+    /// may later put in their place. Like a native function, the result
+    /// shows no source.
+    public func SelfHosted(_ source: string, _ helpers: [Value]) throws -> JSObject {
+        let factory = try Engine!.IndirectEval(self, str.JSString.From("(" + source + ")"))
+        let made = try Call(factory, .undefined, helpers)
+        guard case .object(let fn) = made else {
+            throw selfHostedError()
+        }
+        if let jf = fn as? JSFunction { jf.Template.Source?.Hidden = true }
+        return fn
+    }
+
     /// Method defines a built-in method on an object: writable,
     /// configurable, not enumerable.
     public func Method(_ on: JSObject, _ name: string, _ length: int, _ fn: @escaping NativeFn) {
@@ -207,7 +229,7 @@ public final class Realm {
     }
 
     /// Getter defines a built-in accessor with only a getter.
-    public func Getter(_ on: JSObject, _ key: PropertyKey, _ fn: @escaping NativeFn) {
+    public func Getter(_ on: JSObject, _ key: value.PropertyKey, _ fn: @escaping NativeFn) {
         var name = ""
         switch key {
         case .string(let s): name = s.String
@@ -241,4 +263,22 @@ public final class Realm {
     public func DefineGlobal(_ name: string, _ v: Value) {
         Global.DefineData(Key(name), v, writable: true, enumerable: false, configurable: true)
     }
+}
+
+/// FunctionPrototypeObject is %Function.prototype%: a function that
+/// accepts any arguments and returns undefined (§20.2.3).
+public final class FunctionPrototypeObject: JSObject {
+    public override init(proto: JSObject?) {
+        super.init(proto: proto)
+    }
+    public override var IsCallable: bool { return true }
+    public override func Call(_ this: Value, _ args: [Value]) throws -> Value {
+        return .undefined
+    }
+}
+
+/// selfHostedError is thrown when a self-hosted factory makes no function.
+/// (Inside Realm, ThrowTypeError names the realm's %ThrowTypeError%.)
+func selfHostedError() -> Completion {
+    return ThrowTypeError("self-hosted factory returned no function")
 }

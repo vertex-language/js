@@ -1,0 +1,10 @@
+10-20 10 20 6 range 10-20 end 3
+false true null
+true 2 true 3 false 0
+a+b gi true true false /a+b/gi
+\/ /(?:)/ i true
+SyntaxError
+SyntaxError
+abcab true true false
+123 aaab undefined d
+true true true

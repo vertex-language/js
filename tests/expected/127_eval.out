@@ -1,0 +1,7 @@
+local global
+number undefined
+undefined
+3 1 if 42 10
+SyntaxError
+global now
+let object true

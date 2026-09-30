@@ -1,0 +1,8 @@
+true 1 true 2 a,b
+true false
+true true true true false
+3 0 1
+10
+TypeError
+[object Reflect] object
+B true

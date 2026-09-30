@@ -1,0 +1,7 @@
+{"a":1,"c":{"a":3}}
+{"a":10,"b":"x","c":[10,20]}
+(root),x,y
+"custom:" {"nested":"nested"}
+TypeError
+{} [null,2]
+{"1":"a","2":"b","x":"x"} {"a":1}

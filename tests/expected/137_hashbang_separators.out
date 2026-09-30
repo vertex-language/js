@@ -1,0 +1,7 @@
+1000 10.5
+170 63 57005 100000000000 1000
+SyntaxError 1__0
+SyntaxError 1_
+ReferenceError _1 === _1
+SyntaxError 0_1
+SyntaxError 1._5

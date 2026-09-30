@@ -1,0 +1,6 @@
+[dep 50] 50 100 1
+true false false
+TypeError
+50 0 {}
+SyntaxError
+2

@@ -1,0 +1,11 @@
+true
+implicit global: ReferenceError
+frozen write: TypeError
+delete nonconfig: TypeError
+getter only: TypeError
+with: SyntaxError
+octal: SyntaxError
+dup params: SyntaxError
+undefined
+primitive write: TypeError
+number prop: TypeError

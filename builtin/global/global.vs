@@ -1,209 +1,234 @@
+// Package global installs the global object's own functions and values
+// (ECMA-262 §19): NaN, Infinity, undefined, eval, isNaN, isFinite,
+// parseInt, parseFloat, the URI functions, and Annex B's escape/unescape.
 package global
 
 import (
     "js/object"
+    "js/str"
     "js/value"
+    "unicode/utf16"
+    "unicode/utf8"
 )
 
-func trim(_ s: string) -> string {
-    let bytes = [uint8](s.utf8)
-    var start = 0
-    while start < bytes.count && (bytes[start] == 0x20 || bytes[start] == 0x09 || bytes[start] == 0x0A || bytes[start] == 0x0D) {
-        start += 1
+typealias Value = object.Value
+
+/// Install defines the global functions and value properties.
+public func Install(_ r: object.Realm) {
+    let g = r.Global
+    g.DefineData(value.PropertyKey.Named("NaN"), .number(float64.nan), writable: false, enumerable: false, configurable: false)
+    g.DefineData(value.PropertyKey.Named("Infinity"), .number(float64.infinity), writable: false, enumerable: false, configurable: false)
+    g.DefineData(value.PropertyKey.Named("undefined"), .undefined, writable: false, enumerable: false, configurable: false)
+
+    let ev = r.Function("eval", 1) { _, args, _ in
+        guard case .string(let s) = object.Arg(args, 0) else { return object.Arg(args, 0) }
+        return try r.Engine!.IndirectEval(r, s)
     }
-    var end = bytes.count
-    while end > start && (bytes[end - 1] == 0x20 || bytes[end - 1] == 0x09 || bytes[end - 1] == 0x0A || bytes[end - 1] == 0x0D) {
-        end -= 1
+    r.EvalFunction = ev
+    r.DefineGlobal("eval", .object(ev))
+
+    r.Method(g, "isNaN", 1) { _, args, _ in
+        return .bool(try object.ToNumber(object.Arg(args, 0)).isNaN)
     }
-    if start >= end { return "" }
-    var sub: [uint8] = []
-    for i in start..<end { sub.append(bytes[i]) }
-    return String(decoding: sub, as: UTF8.self)
+    r.Method(g, "isFinite", 1) { _, args, _ in
+        return .bool(try object.ToNumber(object.Arg(args, 0)).isFinite)
+    }
+    let parseFloat = r.Function("parseFloat", 1) { _, args, _ in
+        return .number(value.ParseFloat(try object.ToString(object.Arg(args, 0))))
+    }
+    let parseInt = r.Function("parseInt", 2) { _, args, _ in
+        let s = try object.ToString(object.Arg(args, 0))
+        let radix = try object.ToInt32(object.Arg(args, 1))
+        return .number(value.ParseInt(s, int(radix)))
+    }
+    r.DefineGlobal("parseFloat", .object(parseFloat))
+    r.DefineGlobal("parseInt", .object(parseInt))
+    r.Intrinsics["parseFloat"] = parseFloat
+    r.Intrinsics["parseInt"] = parseInt
+
+    r.Method(g, "encodeURI", 1) { _, args, _ in
+        return .string(try Encode(try object.ToString(object.Arg(args, 0)), extraUnescaped: ";/?:@&=+$,#"))
+    }
+    r.Method(g, "encodeURIComponent", 1) { _, args, _ in
+        return .string(try Encode(try object.ToString(object.Arg(args, 0)), extraUnescaped: ""))
+    }
+    r.Method(g, "decodeURI", 1) { _, args, _ in
+        return .string(try Decode(try object.ToString(object.Arg(args, 0)), preserve: ";/?:@&=+$,#"))
+    }
+    r.Method(g, "decodeURIComponent", 1) { _, args, _ in
+        return .string(try Decode(try object.ToString(object.Arg(args, 0)), preserve: ""))
+    }
+    r.Method(g, "escape", 1) { _, args, _ in
+        return .string(Escape(try object.ToString(object.Arg(args, 0))))
+    }
+    r.Method(g, "unescape", 1) { _, args, _ in
+        return .string(Unescape(try object.ToString(object.Arg(args, 0))))
+    }
 }
 
-func hasPrefix(_ s: string, _ prefix: string) -> bool {
-    let sb = [uint8](s.utf8)
-    let pb = [uint8](prefix.utf8)
-    if sb.count < pb.count { return false }
-    for i in 0..<pb.count {
-        if sb[i] != pb[i] { return false }
+// MARK: URI (§19.2.6)
+
+let hexDigits: [uint16] = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70]
+
+/// isURIUnreserved is uriAlpha, DecimalDigit and uriMark.
+func isURIUnreserved(_ c: uint16) -> bool {
+    if c >= 97 && c <= 122 { return true }
+    if c >= 65 && c <= 90 { return true }
+    if c >= 48 && c <= 57 { return true }
+    switch c {
+    case 45, 95, 46, 33, 126, 42, 39, 40, 41: return true // - _ . ! ~ * ' ( )
+    default: return false
     }
-    return true
 }
 
-func parseIntegerWithRadix(_ str: string, radix: int) -> int64? {
-    let bytes = [uint8](str.utf8)
-    if bytes.isEmpty { return nil }
-    var start = 0
-    var sign: int64 = 1
-    if bytes[0] == 0x2D { // '-'
-        sign = -1
-        start = 1
-    } else if bytes[0] == 0x2B { // '+'
-        start = 1
-    }
-    if start >= bytes.count { return nil }
-    var result: int64 = 0
-    var hasDigits = false
-    let r = int64(radix)
-    for idx in start..<bytes.count {
-        let b = bytes[idx]
-        var digit: int64 = -1
-        if b >= 0x30 && b <= 0x39 {
-            digit = int64(b - 0x30)
-        } else if b >= 0x61 && b <= 0x7A {
-            digit = int64(b - 0x61 + 10)
-        } else if b >= 0x41 && b <= 0x5A {
-            digit = int64(b - 0x41 + 10)
-        }
-        if digit < 0 || digit >= r {
-            break
-        }
-        hasDigits = true
-        result = result * r + digit
-    }
-    if !hasDigits { return nil }
-    return result * sign
+func contains(_ set: string, _ c: uint16) -> bool {
+    if c >= 128 { return false }
+    for b in set.utf8 where uint16(b) == c { return true }
+    return false
 }
 
-/// Register registers Global Object functions (§19) into the realm.
-public func Register(into realm: object.Realm) {
-    let g = realm.GlobalObject
-
-    // isNaN
-    let isNaNFn = realm.NewFunction(name: "isNaN") { _, _, args in
-        let num = args.isEmpty ? float64.nan : args[0].ToNumber()
-        return value.Value.Boolean(num.isNaN)
-    }
-    g.Set("isNaN", value.Value.Object(isNaNFn))
-
-    // isFinite
-    let isFiniteFn = realm.NewFunction(name: "isFinite") { _, _, args in
-        let num = args.isEmpty ? float64.nan : args[0].ToNumber()
-        return value.Value.Boolean(!num.isNaN && !num.isInfinite)
-    }
-    g.Set("isFinite", value.Value.Object(isFiniteFn))
-
-    // parseInt
-    let parseIntFn = realm.NewFunction(name: "parseInt") { _, _, args in
-        if args.isEmpty { return value.Value.Number(float64.nan) }
-        var str = trim(args[0].ToString())
-        if str.isEmpty { return value.Value.Number(float64.nan) }
-        var radix = 10
-        if args.count > 1 && !args[1].IsUndefined {
-            let r = Int(args[1].ToInt32())
-            if r >= 2 && r <= 36 { radix = r }
+/// Encode is Encode (§19.2.6.5).
+public func Encode(_ s: str.JSString, extraUnescaped: string) throws -> str.JSString {
+    let u = s.Units
+    var out = str.Builder()
+    var k = 0
+    while k < u.count {
+        let c = u[k]
+        if isURIUnreserved(c) || contains(extraUnescaped, c) {
+            out.AppendUnit(c)
+            k += 1
+            continue
         }
-        if hasPrefix(str, "0x") || hasPrefix(str, "0X") {
-            radix = 16
-            let chars = Array(str)
-            var rest = ""
-            for idx in 2..<chars.count { rest += String(chars[idx]) }
-            str = rest
+        let (cp, width) = utf16.DecodeAt(u, k)
+        if cp >= 0xD800 && cp <= 0xDFFF {
+            throw object.ThrowURIError("URI malformed")
         }
-        if let val = parseIntegerWithRadix(str, radix: radix) {
-            return value.Value.Number(float64(val))
+        k += width
+        var bytes: [uint8] = []
+        utf8.Append(&bytes, cp)
+        for b in bytes {
+            out.AppendUnit(37)
+            out.AppendUnit(hexDigits[int(b >> 4)])
+            out.AppendUnit(hexDigits[int(b & 15)])
         }
-        return value.Value.Number(float64.nan)
     }
-    g.Set("parseInt", value.Value.Object(parseIntFn))
+    return out.Build()
+}
 
-    // parseFloat
-    let parseFloatFn = realm.NewFunction(name: "parseFloat") { _, _, args in
-        if args.isEmpty { return value.Value.Number(float64.nan) }
-        let str = trim(args[0].ToString())
-        if let d = float64(str) {
-            return value.Value.Number(d)
+func hexValue(_ c: uint16) -> int {
+    if c >= 48 && c <= 57 { return int(c) - 48 }
+    if c >= 65 && c <= 70 { return int(c) - 55 }
+    if c >= 97 && c <= 102 { return int(c) - 87 }
+    return -1
+}
+
+func hexByte(_ u: [uint16], _ at: int) -> int {
+    if at + 2 >= u.count { return -1 }
+    if u[at] != 37 { return -1 }
+    let hi = hexValue(u[at + 1])
+    let lo = hexValue(u[at + 2])
+    if hi < 0 || lo < 0 { return -1 }
+    return hi * 16 + lo
+}
+
+/// Decode is Decode (§19.2.6.6).
+public func Decode(_ s: str.JSString, preserve: string) throws -> str.JSString {
+    let u = s.Units
+    var out = str.Builder()
+    var k = 0
+    while k < u.count {
+        let c = u[k]
+        if c != 37 {
+            out.AppendUnit(c)
+            k += 1
+            continue
         }
-        return value.Value.Number(float64.nan)
-    }
-    g.Set("parseFloat", value.Value.Object(parseFloatFn))
-
-    // gc()
-    let gcFn = realm.NewFunction(name: "gc") { r, _, _ in
-        r.Heap.Collect()
-        return value.Value.Undefined
-    }
-    g.Set("gc", value.Value.Object(gcFn))
-
-    // Active timers manager
-    final class TimerManager {
-        var nextId: int32 = 1
-        var cancelled: [int32: bool] = [:]
-    }
-    let manager = TimerManager()
-
-    // setTimeout(callback, delay, ...args)
-    let setTimeoutFn = realm.NewFunction(name: "setTimeout") { r, _, args in
-        if args.isEmpty { return value.Value.Int(0) }
-        guard let cbObj = args[0].ObjVal as? object.JSObject, cbObj.Callable != nil else {
-            return value.Value.Int(0)
+        let start = k
+        let b = hexByte(u, k)
+        if b < 0 { throw object.ThrowURIError("URI malformed") }
+        k += 3
+        if b < 0x80 {
+            if contains(preserve, uint16(b)) {
+                var i = start
+                while i < k { out.AppendUnit(u[i]); i += 1 }
+            } else {
+                out.AppendUnit(uint16(b))
+            }
+            continue
         }
-        let timerId = manager.nextId
-        manager.nextId += 1
+        var n = 0
+        if b & 0xE0 == 0xC0 { n = 2 } else if b & 0xF0 == 0xE0 { n = 3 } else if b & 0xF8 == 0xF0 { n = 4 }
+        if n == 0 { throw object.ThrowURIError("URI malformed") }
+        var bytes: [uint8] = [uint8(b)]
+        var j = 1
+        while j < n {
+            let nb = hexByte(u, k)
+            if nb < 0 || nb & 0xC0 != 0x80 { throw object.ThrowURIError("URI malformed") }
+            bytes.append(uint8(nb))
+            k += 3
+            j += 1
+        }
+        let (cp, width) = utf8.DecodeAt(bytes, 0)
+        if width != n {
+            throw object.ThrowURIError("URI malformed")
+        }
+        out.AppendCodePoint(cp)
+    }
+    return out.Build()
+}
 
-        var cbArgs: [value.Value] = []
-        if args.count > 2 {
-            for i in 2..<args.count {
-                cbArgs.append(args[i])
+// MARK: Annex B (§B.2.1)
+
+/// Escape is escape(string).
+public func Escape(_ s: str.JSString) -> str.JSString {
+    var out = str.Builder()
+    for c in s.Units {
+        let plain = (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || contains("@*_+-./", c)
+        if plain {
+            out.AppendUnit(c)
+        } else if c < 256 {
+            out.AppendUnit(37)
+            out.AppendUnit(hexDigits[int(c >> 4)])
+            out.AppendUnit(hexDigits[int(c & 15)])
+        } else {
+            out.AppendUnit(37)
+            out.AppendUnit(117)
+            out.AppendUnit(hexDigits[int(c >> 12)])
+            out.AppendUnit(hexDigits[int((c >> 8) & 15)])
+            out.AppendUnit(hexDigits[int((c >> 4) & 15)])
+            out.AppendUnit(hexDigits[int(c & 15)])
+        }
+    }
+    return out.Build()
+}
+
+/// Unescape is unescape(string).
+public func Unescape(_ s: str.JSString) -> str.JSString {
+    let u = s.Units
+    var out = str.Builder()
+    var k = 0
+    while k < u.count {
+        let c = u[k]
+        if c == 37 {
+            if k + 6 <= u.count && u[k + 1] == 117 {
+                let a = hexValue(u[k + 2]), b = hexValue(u[k + 3]), cc = hexValue(u[k + 4]), d = hexValue(u[k + 5])
+                if a >= 0 && b >= 0 && cc >= 0 && d >= 0 {
+                    out.AppendUnit(uint16(a << 12 | b << 8 | cc << 4 | d))
+                    k += 6
+                    continue
+                }
+            }
+            if k + 3 <= u.count {
+                let a = hexValue(u[k + 1]), b = hexValue(u[k + 2])
+                if a >= 0 && b >= 0 {
+                    out.AppendUnit(uint16(a << 4 | b))
+                    k += 3
+                    continue
+                }
             }
         }
-
-        r.EnqueueJob {
-            if manager.cancelled[timerId] == true {
-                return
-            }
-            _ = try? r.Call(cbObj, args: cbArgs)
-        }
-
-        return value.Value.Int(timerId)
+        out.AppendUnit(c)
+        k += 1
     }
-    g.Set("setTimeout", value.Value.Object(setTimeoutFn))
-
-    // clearTimeout(id)
-    let clearTimeoutFn = realm.NewFunction(name: "clearTimeout") { _, _, args in
-        if !args.isEmpty {
-            let id = args[0].ToInt32()
-            manager.cancelled[id] = true
-        }
-        return value.Value.Undefined
-    }
-    g.Set("clearTimeout", value.Value.Object(clearTimeoutFn))
-
-    // setInterval(callback, delay, ...args)
-    let setIntervalFn = realm.NewFunction(name: "setInterval") { r, _, args in
-        if args.isEmpty { return value.Value.Int(0) }
-        guard let cbObj = args[0].ObjVal as? object.JSObject, cbObj.Callable != nil else {
-            return value.Value.Int(0)
-        }
-        let timerId = manager.nextId
-        manager.nextId += 1
-
-        var cbArgs: [value.Value] = []
-        if args.count > 2 {
-            for i in 2..<args.count {
-                cbArgs.append(args[i])
-            }
-        }
-
-        r.EnqueueJob {
-            if manager.cancelled[timerId] == true {
-                return
-            }
-            _ = try? r.Call(cbObj, args: cbArgs)
-        }
-
-        return value.Value.Int(timerId)
-    }
-    g.Set("setInterval", value.Value.Object(setIntervalFn))
-
-    // clearInterval(id)
-    let clearIntervalFn = realm.NewFunction(name: "clearInterval") { _, _, args in
-        if !args.isEmpty {
-            let id = args[0].ToInt32()
-            manager.cancelled[id] = true
-        }
-        return value.Value.Undefined
-    }
-    g.Set("clearInterval", value.Value.Object(clearIntervalFn))
+    return out.Build()
 }

@@ -1,0 +1,7 @@
+ReferenceError
+typeof in TDZ: ReferenceError
+2
+true
+ok
+self-ref ReferenceError
+SyntaxError

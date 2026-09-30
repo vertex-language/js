@@ -1,0 +1,8 @@
+decl expr inner arrow 2 3 1
+m computed get g a
+[desc]
+true bound  bound decl
+3 ab NaN undefined
+3628800
+length,name,prototype
+length,name

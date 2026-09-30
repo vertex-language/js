@@ -1,0 +1,6 @@
+enc a%20b%26c%3Dd%2F%C3%A9%3F%F0%9F%98%80%23 a%20b&c=d/%C3%A9?%F0%9F%98%80#
+dec true %2F  / 
+URIError
+URIError
+reserved -_.!~*'() ;,/?:@&=+$#
+annex b a%20b+%E9 é 

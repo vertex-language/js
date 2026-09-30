@@ -36,6 +36,9 @@ public final class Binding {
     /// NeedsTDZ is set for let, const and class bindings read before the
     /// analysis can prove they are initialized.
     public var NeedsTDZ: bool = false
+    /// ParamTDZ is set on the parameters of a function whose parameter list
+    /// is not simple: each is in its TDZ until initialized, left to right.
+    public var ParamTDZ: bool = false
 
     public init(name: string, kind: BindingKind) {
         self.Name = name
@@ -43,7 +46,7 @@ public final class Binding {
     }
 
     public var IsLexical: bool {
-        return Kind == .letBinding || Kind == .constBinding || Kind == .classBinding
+        return Kind == .letBinding || Kind == .constBinding || Kind == .classBinding || (Kind == .parameter && ParamTDZ)
     }
 
     public var IsConst: bool {
@@ -78,9 +81,15 @@ public final class Scope {
     public var NeedsContext: bool = false
     /// ContextSlots counts the captured bindings.
     public var ContextSlots: int = 0
-    /// Dynamic is set when names in this scope or below can't be resolved
-    /// statically: a sloppy direct eval or a with statement is inside it.
+    /// Dynamic is set on a function scope whose names can't be resolved
+    /// statically past it: it calls eval directly in sloppy mode, so eval
+    /// may declare vars in it.
     public var Dynamic: bool = false
+    /// Registers is, on a function-level scope, how many registers its
+    /// uncaptured bindings take (they are numbered from 0).
+    public var Registers: int = 0
+    /// Info is filled by the compiler: the scope's ScopeInfo index.
+    public var InfoIndex: int = -1
     /// HasDirectEval is set when this scope itself calls eval directly.
     public var HasDirectEval: bool = false
     public var Strict: bool = false
@@ -368,6 +377,9 @@ public final class FunctionNode {
     /// parameters have expressions (defaults), which get their own scope.
     public var BodyScope: Scope? = nil
     public var UsesArguments: bool = false
+    /// AnnexB is set on a block-level function declaration in sloppy code
+    /// that also assigns the enclosing function's var of its name (Annex B.3.3).
+    public var AnnexB: bool = false
     public var UsesThis: bool = false
     public var HasDirectEval: bool = false
     /// Class is set on a class's constructor and methods, for field setup.
@@ -410,6 +422,8 @@ public final class ClassElement {
     public var Kind: ClassElementKind
     public var Key: PropertyKey
     public var IsStatic: bool
+    /// PrivateBinding is the binding for a #name key.
+    public var PrivateBinding: Binding? = nil
     /// Value is the method's function, or the field's initializer wrapped
     /// in a function (nil for a field with none).
     public var Value: FunctionNode?
@@ -514,6 +528,8 @@ public final class MemberExpr {
     public var Computed: bool
     public var Private: bool         // obj.#x
     public var Optional: bool        // obj?.x
+    /// PrivateBinding is the class scope's binding for #Name, when Private.
+    public var PrivateBinding: Binding? = nil
     public let At: int
     public init(object: Expr, name: string, property: Expr?, computed: bool, isPrivate: bool, optional: bool, at: int) {
         self.Object = object
@@ -566,6 +582,7 @@ public final class ImportCall {
 public final class PrivateInExpr {
     public var Name: string
     public var Right: Expr
+    public var PrivateBinding: Binding? = nil
     public let At: int
     public init(name: string, right: Expr, at: int) { self.Name = name; self.Right = right; self.At = at }
 }
@@ -645,6 +662,12 @@ public enum DeclKind: Equatable {
     case varKind
     case letKind
     case constKind
+    case usingKind       // using x = ... (ES2026)
+    case awaitUsingKind  // await using x = ...
+
+    /// IsUsing is set for using and await using: const bindings whose
+    /// values are disposed when their scope ends.
+    public var IsUsing: bool { return self == .usingKind || self == .awaitUsingKind }
 }
 
 public final class Declarator {

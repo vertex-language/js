@@ -1,0 +1,8 @@
+true true false false
+true false false true
+false true true
+9007199254740991 -9007199254740991 true true
+1.7976931348623157e+308 5e-324 Infinity -Infinity
+42 0 5 15 NaN NaN 0 NaN
+Infinity -Infinity NaN 0 7 0 12
+true true

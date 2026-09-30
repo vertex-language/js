@@ -1,117 +1,90 @@
+// Package memory installs managing memory (ECMA-262 §26): WeakRef and
+// FinalizationRegistry.
+//
+// TODO(gc): the engine has no tracing collector yet -- objects are
+// reference counted -- so there is no collection to observe: a WeakRef
+// holds its target strongly and cleanup callbacks never run (which the
+// spec permits). A collector of the engine's own will make them weak.
 package memory
 
 import (
-    "gc"
+    "js/builtin/keyed"
     "js/object"
+    "js/str"
     "js/value"
 )
 
-final class ValueBox {
-    var val: value.Value
-    init(_ val: value.Value) { self.val = val }
-}
+typealias Value = object.Value
 
-final class WeakRefHolder {
-    let weakRef: gc.WeakRef<gc.Cell>
+func key(_ s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
 
-    init(_ target: gc.Cell) {
-        self.weakRef = gc.WeakRef(target)
+public final class WeakRef: object.JSObject {
+    public let Target: Value
+    public init(_ t: Value, proto: object.JSObject) {
+        self.Target = t
+        super.init(proto: proto)
+        self.Kind = .weakRef
     }
 }
 
-final class FinalizerHolder {
-    let registry: gc.FinalizationRegistry
-    let callback: object.JSObject
-
-    init(reg: gc.FinalizationRegistry, cb: object.JSObject) {
-        self.registry = reg
-        self.callback = cb
+public final class FinalizationRegistry: object.JSObject {
+    public let Cleanup: Value
+    public var Cells: [(target: Value, held: Value, token: Value)] = []
+    public init(_ cleanup: Value, proto: object.JSObject) {
+        self.Cleanup = cleanup
+        super.init(proto: proto)
+        self.Kind = .finalizationRegistry
     }
 }
 
-/// Register registers WeakRef and FinalizationRegistry built-ins (§26) into the realm.
-public func Register(into realm: object.Realm) {
-    let g = realm.GlobalObject
-
-    // WeakRef
-    let weakRefProto = realm.NewObject()
-    weakRefProto.InternalTag = "WeakRef"
-
-    let weakRefCtor = realm.NewFunction(name: "WeakRef") { r, _, args in
-        guard !args.isEmpty, let target = args[0].ObjVal else {
-            return value.Value.Undefined
-        }
-        let holder = WeakRefHolder(target)
-        r.Heap.RegisterWeakRef(holder.weakRef)
-
-        let wr = r.NewObject(prototype: weakRefProto)
-        wr.InternalTag = "WeakRef"
-        wr.NativeData = holder
-        return value.Value.Object(wr)
+/// Install defines WeakRef and FinalizationRegistry.
+public func Install(_ r: object.Realm) {
+    let wrp = object.JSObject(proto: r.ObjectPrototype)
+    _ = r.Constructor("WeakRef", 1, prototype: wrp) { _, args, nt in
+        guard let n = nt else { throw object.ThrowTypeError("Constructor WeakRef requires 'new'") }
+        let t = object.Arg(args, 0)
+        if !keyed.CanBeHeldWeakly(t) { throw object.ThrowTypeError("WeakRef: invalid target") }
+        return .object(WeakRef(t, proto: try object.GetPrototypeFromConstructor(n, wrp)))
     }
-    weakRefCtor.Set("prototype", value.Value.Object(weakRefProto))
-
-    weakRefProto.Set("deref", value.Value.Object(realm.NewFunction(name: "deref") { _, thisVal, _ in
-        guard let wr = thisVal.ObjVal as? object.JSObject, let holder = wr.NativeData as? WeakRefHolder else {
-            return value.Value.Undefined
+    r.Method(wrp, "deref", 0) { thisV, _, _ in
+        guard case .object(let o) = thisV, let w = o as? WeakRef else {
+            throw object.ThrowTypeError("Method WeakRef.prototype.deref called on incompatible receiver \(object.Describe(thisV))")
         }
-        if let target = holder.weakRef.Deref() {
-            return value.Value.Object(target)
-        }
-        return value.Value.Undefined
-    }))
-
-    g.Set("WeakRef", value.Value.Object(weakRefCtor))
-
-    // FinalizationRegistry
-    let finProto = realm.NewObject()
-    finProto.InternalTag = "FinalizationRegistry"
-
-    let finCtor = realm.NewFunction(name: "FinalizationRegistry") { r, _, args in
-        guard !args.isEmpty, let cb = args[0].ObjVal as? object.JSObject else {
-            return value.Value.Undefined
-        }
-        let reg = gc.FinalizationRegistry()
-        r.Heap.RegisterFinalizer(reg)
-
-        let holder = FinalizerHolder(reg: reg, cb: cb)
-        let regObj = r.NewObject(prototype: finProto)
-        regObj.InternalTag = "FinalizationRegistry"
-        regObj.NativeData = holder
-        return value.Value.Object(regObj)
+        return w.Target
     }
-    finCtor.Set("prototype", value.Value.Object(finProto))
+    wrp.DefineData(.symbol(value.SymToStringTag), .string(str.Name("WeakRef")), writable: false, enumerable: false, configurable: true)
 
-    finProto.Set("register", value.Value.Object(realm.NewFunction(name: "register") { _, thisVal, args in
-        guard let regObj = thisVal.ObjVal as? object.JSObject, let holder = regObj.NativeData as? FinalizerHolder else {
-            return value.Value.Undefined
+    let frp = object.JSObject(proto: r.ObjectPrototype)
+    _ = r.Constructor("FinalizationRegistry", 1, prototype: frp) { _, args, nt in
+        guard let n = nt else { throw object.ThrowTypeError("Constructor FinalizationRegistry requires 'new'") }
+        let cb = object.Arg(args, 0)
+        if !cb.IsCallable { throw object.ThrowTypeError("FinalizationRegistry: cleanup must be callable") }
+        return .object(FinalizationRegistry(cb, proto: try object.GetPrototypeFromConstructor(n, frp)))
+    }
+    func this(_ v: Value, _ method: string) throws -> FinalizationRegistry {
+        if case .object(let o) = v, let f = o as? FinalizationRegistry { return f }
+        throw object.ThrowTypeError("Method FinalizationRegistry.prototype.\(method) called on incompatible receiver \(object.Describe(v))")
+    }
+    r.Method(frp, "register", 2) { thisV, args, _ in
+        let f = try this(thisV, "register")
+        let t = object.Arg(args, 0)
+        if !keyed.CanBeHeldWeakly(t) { throw object.ThrowTypeError("FinalizationRegistry.prototype.register: invalid target") }
+        let held = object.Arg(args, 1)
+        if object.SameValue(t, held) { throw object.ThrowTypeError("FinalizationRegistry.prototype.register: target and holdings must not be same") }
+        let token = object.Arg(args, 2)
+        if !token.IsUndefined && !keyed.CanBeHeldWeakly(token) {
+            throw object.ThrowTypeError("FinalizationRegistry.prototype.register: invalid unregister token")
         }
-        guard !args.isEmpty, let target = args[0].ObjVal else {
-            return value.Value.Undefined
-        }
-        let heldVal = args.count > 1 ? args[1] : value.Value.Undefined
-        let heldBox = ValueBox(heldVal)
-        var unregToken: AnyObject? = nil
-        if args.count > 2 {
-            unregToken = args[2].ObjVal
-        }
-
-        holder.registry.Register(target: target, heldValue: heldBox, unregisterToken: unregToken) { _ in
-            // Reclaimed target callback
-        }
-        return value.Value.Undefined
-    }))
-
-    finProto.Set("unregister", value.Value.Object(realm.NewFunction(name: "unregister") { _, thisVal, args in
-        guard let regObj = thisVal.ObjVal as? object.JSObject, let holder = regObj.NativeData as? FinalizerHolder else {
-            return value.Value.False
-        }
-        if args.isEmpty || args[0].ObjVal == nil {
-            return value.Value.False
-        }
-        let ok = holder.registry.Unregister(token: args[0].ObjVal!)
-        return value.Value.Boolean(ok)
-    }))
-
-    g.Set("FinalizationRegistry", value.Value.Object(finCtor))
+        f.Cells.append((target: .undefined, held: held, token: token))
+        return .undefined
+    }
+    r.Method(frp, "unregister", 1) { thisV, args, _ in
+        let f = try this(thisV, "unregister")
+        let token = object.Arg(args, 0)
+        if !keyed.CanBeHeldWeakly(token) { throw object.ThrowTypeError("Invalid unregisterToken ('\(object.Describe(token))')") }
+        let before = f.Cells.count
+        f.Cells.removeAll { c in object.SameValue(c.token, token) }
+        return .bool(f.Cells.count != before)
+    }
+    frp.DefineData(.symbol(value.SymToStringTag), .string(str.Name("FinalizationRegistry")), writable: false, enumerable: false, configurable: true)
 }

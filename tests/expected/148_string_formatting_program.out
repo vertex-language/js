@@ -1,0 +1,6 @@
+item        | qty |  price |  total
+------------+-----+--------+-------
+Widget      |   3 |   2.50 |   7.50
+Gadget      |  10 |   0.99 |   9.90
+Thingamajig |   1 | 120.00 | 120.00
+grand total 137.40

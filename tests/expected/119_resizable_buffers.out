@@ -1,0 +1,6 @@
+true 16 4
+12 12
+RangeError
+true 0 16 42 false
+TypeError
+16 true

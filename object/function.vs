@@ -78,8 +78,8 @@ public final class NativeFunction: JSObject {
         self.Realm = realm
         super.init(proto: proto ?? realm.FunctionPrototype)
         self.Kind = .function
-        DefineData(keyLength, .number(float64(length)), writable: false, enumerable: false, configurable: true)
-        DefineData(keyName, .string(str.JSString.From(name)), writable: false, enumerable: false, configurable: true)
+        self.DefineData(keyLength, .number(float64(length)), writable: false, enumerable: false, configurable: true)
+        self.DefineData(keyName, .string(str.JSString.From(name)), writable: false, enumerable: false, configurable: true)
     }
 
     public init(realm: Realm, symbolName: value.Symbol, prefix: string, length: int, _ fn: @escaping NativeFn) {
@@ -88,10 +88,10 @@ public final class NativeFunction: JSObject {
         self.Realm = realm
         super.init(proto: realm.FunctionPrototype)
         self.Kind = .function
-        DefineData(keyLength, .number(float64(length)), writable: false, enumerable: false, configurable: true)
+        self.DefineData(keyLength, .number(float64(length)), writable: false, enumerable: false, configurable: true)
         var n = prefix
         if let d = symbolName.Description { n += "[" + d.String + "]" }
-        DefineData(keyName, .string(str.JSString.From(n)), writable: false, enumerable: false, configurable: true)
+        self.DefineData(keyName, .string(str.JSString.From(n)), writable: false, enumerable: false, configurable: true)
     }
 
     public override var IsCallable: bool { return true }
@@ -114,9 +114,9 @@ public final class NativeFunction: JSObject {
 
 /// ClassField is one instance field a class constructor defines.
 public final class ClassField {
-    public let Key: PropertyKey
+    public let Key: value.PropertyKey
     public let Initializer: JSObject?
-    public init(key: PropertyKey, initializer: JSObject?) {
+    public init(key: value.PropertyKey, initializer: JSObject?) {
         self.Key = key
         self.Initializer = initializer
     }
@@ -208,7 +208,7 @@ public final class BoundFunction: JSObject {
 }
 
 /// SetFunctionName (§10.2.9) defines a function's name property.
-public func SetFunctionName(_ f: JSObject, _ key: PropertyKey, prefix: string = "") {
+public func SetFunctionName(_ f: JSObject, _ key: value.PropertyKey, prefix: string = "") {
     var name: str.JSString
     switch key {
     case .symbol(let s):
