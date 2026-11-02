@@ -9,7 +9,7 @@ import (
 
 extension Engine {
     /// exec is the dispatch loop.
-    func exec(_ f: Frame) throws -> Exit {
+    func exec(f: Frame) throws -> Exit {
         let code = f.t.Code
         let consts = f.t.Constants
         let strict = f.t.Strict
@@ -648,7 +648,7 @@ extension Engine {
 
     // MARK: helpers
 
-    func constValue(_ c: bytecode.Constant) -> Value {
+    func constValue(c: bytecode.Constant) -> Value {
         switch c {
         case .number(let d): return .number(d)
         case .string(let s): return .string(s)
@@ -658,7 +658,7 @@ extension Engine {
         }
     }
 
-    func constString(_ c: bytecode.Constant) -> str.JSString {
+    func constString(c: bytecode.Constant) -> str.JSString {
         switch c {
         case .string(let s): return s
         case .key(let k): return k.AsString
@@ -666,7 +666,7 @@ extension Engine {
         }
     }
 
-    func constKey(_ c: bytecode.Constant) -> value.PropertyKey {
+    func constKey(c: bytecode.Constant) -> value.PropertyKey {
         switch c {
         case .key(let k): return k
         case .string(let s): return value.PropertyKey.FromString(s)
@@ -674,11 +674,11 @@ extension Engine {
         }
     }
 
-    func tdz(_ c: bytecode.Constant) -> object.Completion {
+    func tdz(c: bytecode.Constant) -> object.Completion {
         return object.ThrowReferenceError("Cannot access '\(constString(c).String)' before initialization")
     }
 
-    func contextAt(_ f: Frame, _ depth: int32) -> object.Context {
+    func contextAt(f: Frame, depth: int32) -> object.Context {
         var c = f.ctx!
         var d = depth
         while d > 0 {
@@ -688,7 +688,7 @@ extension Engine {
         return c
     }
 
-    func argsFrom(_ f: Frame, _ first: int, _ n: int) -> [Value] {
+    func argsFrom(f: Frame, first: int, n: int) -> [Value] {
         if n == 0 { return [] }
         var out: [Value] = []
         out.reserveCapacity(n)
@@ -700,7 +700,7 @@ extension Engine {
         return out
     }
 
-    func spreadArgs(_ v: Value) throws -> [Value] {
+    func spreadArgs(v: Value) throws -> [Value] {
         if case .object(let o) = v, let arr = o as? object.ArrayObject {
             var out = arr.Dense
             var i = 0
@@ -713,26 +713,26 @@ extension Engine {
         return []
     }
 
-    func arith(_ op: object.ArithOp, _ l: Value, _ r: Value) throws -> Value {
+    func arith(op: object.ArithOp, l: Value, r: Value) throws -> Value {
         if case .number(let a) = l, case .number(let b) = r {
             return .number(object.NumberOp(op, a, b))
         }
         return try object.Arithmetic(op, l, r)
     }
 
-    func describeIn(_ v: Value) -> string {
+    func describeIn(v: Value) -> string {
         switch v {
         case .string(let s): return s.String
         default: return object.Describe(v)
         }
     }
 
-    func nameOfPrivate(_ v: Value) -> string {
+    func nameOfPrivate(v: Value) -> string {
         if case .symbol(let s) = v { return s.DescriptiveString }
         return "#?"
     }
 
-    func superBase(_ f: Frame) throws -> object.JSObject {
+    func superBase(f: Frame) throws -> object.JSObject {
         guard let fn = activeFunction(f), let home = fn.HomeObject else {
             throw object.ThrowSyntaxError("'super' keyword unexpected here")
         }
@@ -742,7 +742,7 @@ extension Engine {
         return p
     }
 
-    func privateGet(_ base: Value, _ name: Value) throws -> Value {
+    func privateGet(base: Value, name: Value) throws -> Value {
         guard case .symbol(let s) = name else { return .undefined }
         guard case .object(let o) = base, let slot = o.OwnSlot(.symbol(s)) else {
             throw object.ThrowTypeError("Cannot read private member \(s.DescriptiveString) from an object whose class did not declare it")
@@ -756,7 +756,7 @@ extension Engine {
         return slot.Value
     }
 
-    func privateSet(_ base: Value, _ name: Value, _ v: Value) throws {
+    func privateSet(base: Value, name: Value, v: Value) throws {
         guard case .symbol(let s) = name else { return }
         guard case .object(let o) = base, let slot = o.OwnSlot(.symbol(s)) else {
             throw object.ThrowTypeError("Cannot write private member \(s.DescriptiveString) to an object whose class did not declare it")
@@ -776,7 +776,7 @@ extension Engine {
         o.store(.symbol(s), ns)
     }
 
-    func addPrivateMethod(_ list: inout [object.PrivateMethod], _ s: value.Symbol, _ fn: object.JSObject, _ kind: int) {
+    func addPrivateMethod(list: inout [object.PrivateMethod], s: value.Symbol, fn: object.JSObject, kind: int) {
         var pm: object.PrivateMethod? = nil
         for m in list where m.Name === s { pm = m }
         if pm == nil {
@@ -791,14 +791,14 @@ extension Engine {
         }
     }
 
-    func construct(_ f: Frame, _ callee: Value, _ args: [Value]) throws -> Value {
+    func construct(f: Frame, callee: Value, args: [Value]) throws -> Value {
         guard case .object(let o) = callee, o.IsConstructor else {
             throw object.ThrowTypeError("\(calleeText(f)) is not a constructor")
         }
         return try o.Construct(args, o)
     }
 
-    func superCall(_ f: Frame, _ args: [Value]) throws -> Value {
+    func superCall(f: Frame, args: [Value]) throws -> Value {
         guard let fe = f.funcEnv, let active = fe.Function else {
             throw object.ThrowSyntaxError("'super' keyword unexpected here")
         }
@@ -821,7 +821,7 @@ extension Engine {
     }
 
     /// makeClosure instantiates a function template (§10.2.3 OrdinaryFunctionCreate and friends).
-    func makeClosure(_ f: Frame, _ t: bytecode.FunctionTemplate) -> object.JSFunction {
+    func makeClosure(f: Frame, t: bytecode.FunctionTemplate) -> object.JSFunction {
         let r = f.realm
         var proto = r.FunctionPrototype
         if t.IsAsync && t.IsGenerator {
@@ -848,7 +848,7 @@ extension Engine {
 
     /// createClass is the part of ClassDefinitionEvaluation that makes the
     /// constructor and prototype (§15.7.14 steps 5-16).
-    func createClass(_ f: Frame, _ ins: bytecode.Instruction) throws -> Value {
+    func createClass(f: Frame, ins: bytecode.Instruction) throws -> Value {
         let r = f.realm
         var protoParent: object.JSObject? = r.ObjectPrototype
         var ctorParent: object.JSObject = r.FunctionPrototype
@@ -883,7 +883,7 @@ extension Engine {
         return .object(F)
     }
 
-    func templateObject(_ r: object.Realm, _ info: bytecode.TemplateInfo) -> object.JSObject {
+    func templateObject(r: object.Realm, info: bytecode.TemplateInfo) -> object.JSObject {
         if let o = r.TemplateMap[info.ID] { return o }
         var cooked: [Value] = []
         for c in info.Cooked {
@@ -901,7 +901,7 @@ extension Engine {
     }
 
     /// makeArguments creates the arguments object (§10.4.4.6, §10.4.4.7).
-    func makeArguments(_ f: Frame, mapped: bool) -> object.JSObject {
+    func makeArguments(f: Frame, mapped: bool) -> object.JSObject {
         let r = f.realm
         let a = object.ArgumentsObject(proto: r.ObjectPrototype)
         var i = 0

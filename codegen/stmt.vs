@@ -5,7 +5,7 @@ import (
     "js/bytecode"
 )
 
-func stmtPos(_ s: ast.Stmt) -> int {
+func stmtPos(s: ast.Stmt) -> int {
     switch s {
     case .varDecl(let v): return v.At
     case .functionDecl(let f): return f.Start
@@ -34,7 +34,7 @@ func stmtPos(_ s: ast.Stmt) -> int {
 }
 
 extension Builder {
-    func stmt(_ s: ast.Stmt) throws {
+    func stmt(s: ast.Stmt) throws {
         at(stmtPos(s))
         let m = mark()
         defer { release(m) }
@@ -155,7 +155,7 @@ extension Builder {
         }
     }
 
-    func block(_ b: ast.BlockStmt) throws {
+    func block(b: ast.BlockStmt) throws {
         let s = b.Scope!
         enterScope(s)
         try hoistFunctions(b.Body, s, skipTop: false)
@@ -173,7 +173,7 @@ extension Builder {
 
     /// usingIn says whether a statement list declares using directly: nil
     /// if not, else whether any is an await using.
-    func usingIn(_ body: [ast.Stmt]) -> bool? {
+    func usingIn(body: [ast.Stmt]) -> bool? {
         var found = false
         var hasAwait = false
         for st in body {
@@ -191,7 +191,7 @@ extension Builder {
     /// newest first (DisposeResources, §9.4.5 of ES2026), before the
     /// completion goes on. A dispose error replaces the completion, a
     /// later one wrapping an earlier as a SuppressedError.
-    func withDispose(hasAwait: bool, _ body: () throws -> Void) throws {
+    func withDispose(hasAwait: bool, body: () throws -> Void) throws {
         let scopeReg = temp()
         emit(.createDisposeScope, scopeReg)
         let f = Control(kind: .finallyBlock)
@@ -278,7 +278,7 @@ extension Builder {
         bind(normal)
     }
 
-    func varDecl(_ v: ast.VarDecl) throws {
+    func varDecl(v: ast.VarDecl) throws {
         for d in v.Declarations {
             if let e = d.Init {
                 try exprNamed(e, patternName(d.Target))
@@ -306,7 +306,7 @@ extension Builder {
 
     /// condition jumps to falseLabel when e is falsy, testing logical
     /// operators without materializing their value.
-    func condition(_ e: ast.Expr, falseLabel: int) throws {
+    func condition(e: ast.Expr, falseLabel: int) throws {
         switch ast.StripParens(e) {
         case .logical(let l) where l.Op == .logicalAnd:
             try condition(l.Left, falseLabel: falseLabel)
@@ -320,14 +320,14 @@ extension Builder {
         }
     }
 
-    func conditionTrue(_ e: ast.Expr, trueLabel: int) throws {
+    func conditionTrue(e: ast.Expr, trueLabel: int) throws {
         try expr(e)
         jump(.jumpIfTrue, trueLabel)
     }
 
     // MARK: the control stack
 
-    func pushLoop(_ labels: [string], breakL: int, continueL: int) -> Control {
+    func pushLoop(labels: [string], breakL: int, continueL: int) -> Control {
         let c = Control(kind: .loop)
         c.labels = labels
         c.breakLabel = breakL
@@ -336,13 +336,13 @@ extension Builder {
         return c
     }
 
-    func popControl(_ c: Control) {
+    func popControl(c: Control) {
         if let i = control.lastIndex(where: { $0 === c }) {
             control.remove(at: i)
         }
     }
 
-    func findBreak(_ label: string?) -> int {
+    func findBreak(label: string?) -> int {
         var i = control.count - 1
         while i >= 0 {
             let c = control[i]
@@ -356,7 +356,7 @@ extension Builder {
         return 0
     }
 
-    func findContinue(_ label: string?) -> int {
+    func findContinue(label: string?) -> int {
         var i = control.count - 1
         while i >= 0 {
             let c = control[i]
@@ -371,7 +371,7 @@ extension Builder {
     /// unwind leaves every control entry above `target` (-1: the whole
     /// function) and then performs the action. A finally block on the way
     /// takes the jump over: its dispatch continues the unwinding later.
-    func unwind(to target: int, _ action: JumpAction) {
+    func unwind(to target: int, action: JumpAction) {
         var i = control.count - 1
         while i > target {
             let c = control[i]
@@ -417,7 +417,7 @@ extension Builder {
 
     // MARK: loops
 
-    func forStmt(_ f: ast.ForStmt) throws {
+    func forStmt(f: ast.ForStmt) throws {
         var ls: ast.Scope? = nil
         if let s = f.Scope {
             ls = s
@@ -453,7 +453,7 @@ extension Builder {
 
     /// loopTarget binds a for-in or for-of loop's value (in the
     /// accumulator) to its declaration or target.
-    func loopTarget(_ f: ast.ForInStmt) throws {
+    func loopTarget(f: ast.ForInStmt) throws {
         if let d = f.Decl {
             try bindPatternFromAcc(d.Declarations[0].Target, initialize: d.Kind != .varKind)
         } else if let t = f.Target {
@@ -464,7 +464,7 @@ extension Builder {
     /// enterLoopScope enters a for-in/of iteration's scope with the value
     /// still in the accumulator: entering writes the bindings' TDZ holes
     /// through it.
-    func enterLoopScope(_ f: ast.ForInStmt) throws {
+    func enterLoopScope(f: ast.ForInStmt) throws {
         guard let s = f.Scope else { return }
         let v = temp()
         emit(.star, v)
@@ -472,7 +472,7 @@ extension Builder {
         emit(.ldar, v)
     }
 
-    func forIn(_ f: ast.ForInStmt) throws {
+    func forIn(f: ast.ForInStmt) throws {
         // for (var x = init in o): Annex B's initializer runs first.
         if let d = f.Decl, let initE = d.Declarations[0].Init {
             try exprNamed(initE, patternName(d.Declarations[0].Target))
@@ -499,7 +499,7 @@ extension Builder {
         popControl(c)
     }
 
-    func forOf(_ f: ast.ForInStmt) throws {
+    func forOf(f: ast.ForInStmt) throws {
         if let s = f.Scope { enterScope(s) }
         try expr(f.Right)
         if let s = f.Scope { exitScope(s) }
@@ -584,19 +584,19 @@ extension Builder {
     }
 
     /// endOfLoop is where the loop goes when the iterator is done.
-    func endOfLoop(_ end: int, _ c: Control) -> int {
+    func endOfLoop(end: int, c: Control) -> int {
         return end
     }
 
     /// labelPC is a label's address, or -1 if it isn't bound yet (fixed up
     /// by fixHandlers).
-    func labelPC(_ l: int) -> int {
+    func labelPC(l: int) -> int {
         return labels[l]
     }
 
     // MARK: switch
 
-    func switchStmt(_ sw: ast.SwitchStmt) throws {
+    func switchStmt(sw: ast.SwitchStmt) throws {
         try expr(sw.Discriminant)
         let d = temp()
         emit(.star, d)
@@ -645,7 +645,7 @@ extension Builder {
 
     // MARK: try
 
-    func tryStmt(_ tr: ast.TryStmt) throws {
+    func tryStmt(tr: ast.TryStmt) throws {
         let hasFinally = tr.Finalizer != nil
         var fin: Control? = nil
         let finallyL = newLabel()
@@ -751,7 +751,7 @@ extension Builder {
 
     // MARK: modules
 
-    func exportDecl(_ e: ast.ExportDecl) throws {
+    func exportDecl(e: ast.ExportDecl) throws {
         if let d = e.Declaration {
             switch d {
             case .functionDecl:

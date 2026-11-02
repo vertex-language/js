@@ -89,7 +89,7 @@ public final class Engine: object.Engine {
     /// exec hands back the callee's frame, run pushes it, and the caller
     /// resumes with its return value. An exception no handler in a frame
     /// catches pops that frame and is thrown again at the caller's call.
-    func run(_ base: Frame, throwing: Value? = nil) throws -> Exit {
+    func run(base: Frame, throwing: Value? = nil) throws -> Exit {
         // Built-ins that call back into JavaScript (map, getters, toString)
         // still nest run on the native stack: bound the bytes that uses.
         let sp = stackAddress()
@@ -170,7 +170,7 @@ public final class Engine: object.Engine {
         }
     }
 
-    func findHandler(_ f: Frame) -> bytecode.Handler? {
+    func findHandler(f: Frame) -> bytecode.Handler? {
         let pc = f.pc
         for h in f.t.Handlers {
             if pc >= h.Start && pc < h.End { return h }
@@ -179,7 +179,7 @@ public final class Engine: object.Engine {
     }
 
     /// complete runs a frame that must return.
-    func complete(_ f: Frame) throws -> Value {
+    func complete(f: Frame) throws -> Value {
         switch try run(f) {
         case .returned(let v): return v
         default: return .undefined
@@ -188,7 +188,7 @@ public final class Engine: object.Engine {
 
     // MARK: object.Engine
 
-    public func CallFunction(_ fn: object.JSFunction, _ this: Value, _ args: [Value]) throws -> Value {
+    public func CallFunction(fn: object.JSFunction, this: Value, args: [Value]) throws -> Value {
         let t = fn.Template
         depth += 1
         defer { depth -= 1 }
@@ -205,7 +205,7 @@ public final class Engine: object.Engine {
         return try complete(f)
     }
 
-    public func ConstructFunction(_ fn: object.JSFunction, _ args: [Value], _ newTarget: object.JSObject) throws -> Value {
+    public func ConstructFunction(fn: object.JSFunction, args: [Value], newTarget: object.JSObject) throws -> Value {
         let t = fn.Template
         depth += 1
         defer { depth -= 1 }
@@ -268,7 +268,7 @@ public final class Engine: object.Engine {
 
     /// thisFor is OrdinaryCallBindThis's this: a sloppy function sees the
     /// global object for null and undefined, and wrappers for primitives.
-    func thisFor(_ fn: object.JSFunction, _ this: Value) -> Value {
+    func thisFor(fn: object.JSFunction, this: Value) -> Value {
         let t = fn.Template
         if t.Strict || t.IsArrow { return this }
         switch this {
@@ -282,7 +282,7 @@ public final class Engine: object.Engine {
         }
     }
 
-    func makeFrame(_ fn: object.JSFunction, this: Value, args: [Value], newTarget: Value) -> Frame {
+    func makeFrame(fn: object.JSFunction, this: Value, args: [Value], newTarget: Value) -> Frame {
         let t = fn.Template
         var ctx = fn.Env
         if t.FunctionScope >= 0 {
@@ -303,7 +303,7 @@ public final class Engine: object.Engine {
 
     /// funcEnvOf gives a frame a function environment for an arrow created
     /// in it, making one if the frame has none yet.
-    func funcEnvOf(_ f: Frame) -> object.FunctionEnv {
+    func funcEnvOf(f: Frame) -> object.FunctionEnv {
         if let fe = f.funcEnv { return fe }
         let fe = object.FunctionEnv(this: f.this, newTarget: f.newTarget, function: f.fn)
         f.funcEnv = fe
@@ -311,7 +311,7 @@ public final class Engine: object.Engine {
     }
 
     /// thisOf is the frame's this binding, checked in derived constructors.
-    func thisOf(_ f: Frame) throws -> Value {
+    func thisOf(f: Frame) throws -> Value {
         if let fe = f.funcEnv {
             if fe.This.IsEmpty {
                 throw object.ThrowReferenceError("Must call super constructor in derived class before accessing 'this' or returning from derived constructor")
@@ -323,7 +323,7 @@ public final class Engine: object.Engine {
 
     /// activeFunction is the non-arrow function whose code is running:
     /// the one super and new.target refer to.
-    func activeFunction(_ f: Frame) -> object.JSFunction? {
+    func activeFunction(f: Frame) -> object.JSFunction? {
         if let fe = f.funcEnv, let fn = fe.Function { return fn }
         return f.fn
     }
@@ -331,7 +331,7 @@ public final class Engine: object.Engine {
     // MARK: classes
 
     /// initializeInstanceElements is §7.3.34: private methods, then fields.
-    func initializeInstanceElements(_ obj: object.JSObject, _ ctor: object.JSFunction) throws {
+    func initializeInstanceElements(obj: object.JSObject, ctor: object.JSFunction) throws {
         for m in ctor.PrivateMethods {
             if obj.PrivateFind(m.Name) >= 0 {
                 throw object.ThrowTypeError("Cannot initialize private methods of class \(ctor.Template.Name.String) twice on the same object")
@@ -354,7 +354,7 @@ public final class Engine: object.Engine {
         }
     }
 
-    func installPrivateMethod(_ obj: object.JSObject, _ m: object.PrivateMethod) {
+    func installPrivateMethod(obj: object.JSObject, m: object.PrivateMethod) {
         let key = value.PropertyKey.symbol(m.Name)
         if let fn = m.Method {
             obj.store(key, object.Slot(value: .object(fn), flags: 0))
@@ -371,7 +371,7 @@ public final class Engine: object.Engine {
     /// inlineCallee is the callee when a call can run on the frame stack:
     /// an ordinary bytecode function of this engine (not a generator, an
     /// async function, or a class constructor, which throws).
-    func inlineCallee(_ callee: Value) -> object.JSFunction? {
+    func inlineCallee(callee: Value) -> object.JSFunction? {
         guard case .object(let o) = callee, let fn = o as? object.JSFunction else { return nil }
         let t = fn.Template
         if t.IsGenerator || t.IsAsync || t.IsClassConstructor { return nil }
@@ -383,7 +383,7 @@ public final class Engine: object.Engine {
     /// on the frame stack: an ordinary function or base class constructor
     /// of this engine. Derived constructors, whose this comes from super,
     /// take the native path.
-    func inlineConstruct(_ callee: Value, _ args: [Value]) throws -> Frame? {
+    func inlineConstruct(callee: Value, args: [Value]) throws -> Frame? {
         guard case .object(let o) = callee, let fn = o as? object.JSFunction, fn.IsConstructor else { return nil }
         let t = fn.Template
         if t.Kind == .derivedConstructor { return nil }
@@ -398,14 +398,14 @@ public final class Engine: object.Engine {
         return f
     }
 
-    func callValue(_ f: Frame, _ callee: Value, _ this: Value, _ args: [Value]) throws -> Value {
+    func callValue(f: Frame, callee: Value, this: Value, args: [Value]) throws -> Value {
         guard case .object(let o) = callee, o.IsCallable else {
             throw object.ThrowTypeError("\(calleeText(f)) is not a function")
         }
         return try o.Call(this, args)
     }
 
-    func calleeText(_ f: Frame) -> string {
+    func calleeText(f: Frame) -> string {
         if let s = f.t.CalleeText[f.pc] { return s }
         return "expression"
     }
@@ -413,7 +413,7 @@ public final class Engine: object.Engine {
     // MARK: running scripts
 
     /// RunScript compiles nothing: it runs a compiled script's template in a realm.
-    public func RunScript(_ t: bytecode.FunctionTemplate, realm: object.Realm) throws -> Value {
+    public func RunScript(t: bytecode.FunctionTemplate, realm: object.Realm) throws -> Value {
         let f = Frame(t: t, fn: nil, args: [], this: .object(realm.Global), newTarget: .undefined, ctx: nil, realm: realm)
         return try complete(f)
     }

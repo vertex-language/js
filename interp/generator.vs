@@ -58,7 +58,7 @@ final class ForInIterator: object.JSObject {
     var next: int = 0
     var visited: [value.PropertyKey: bool] = [:]
 
-    init(_ o: object.JSObject) {
+    init(o: object.JSObject) {
         self.current = o
         super.init(proto: nil)
     }
@@ -88,7 +88,7 @@ final class ForInIterator: object.JSObject {
 extension Engine {
     // MARK: generators
 
-    func startGenerator(_ f: Frame, async: bool) throws -> Value {
+    func startGenerator(f: Frame, async: bool) throws -> Value {
         _ = try run(f)
         let r = f.realm
         var proto = async ? r.AsyncGeneratorPrototype : r.GeneratorPrototype
@@ -99,7 +99,7 @@ extension Engine {
         return .object(g)
     }
 
-    func generatorResume(_ g: GeneratorObject, _ mode: int, _ v: Value) throws -> Value {
+    func generatorResume(g: GeneratorObject, mode: int, v: Value) throws -> Value {
         switch g.state {
         case .executing:
             throw object.ThrowTypeError("Generator is already running")
@@ -149,14 +149,14 @@ extension Engine {
 
     // MARK: async functions
 
-    func startAsync(_ f: Frame) throws -> Value {
+    func startAsync(f: Frame) throws -> Value {
         let p = object.PromiseObject(proto: f.realm.PromisePrototype)
         asyncStep(f, p, throwing: nil)
         return .object(p)
     }
 
     /// asyncStep runs an async function's frame until it returns, throws or awaits.
-    func asyncStep(_ f: Frame, _ p: object.PromiseObject, throwing: Value?) {
+    func asyncStep(f: Frame, p: object.PromiseObject, throwing: Value?) {
         do {
             let e = try run(f, throwing: throwing)
             switch e {
@@ -175,7 +175,7 @@ extension Engine {
 
     /// awaitValue is Await (§6.2.3.1): when v settles, the frame resumes with
     /// its value in the accumulator, or by throwing its reason.
-    func awaitValue(_ f: Frame, _ v: Value, _ k: Resumption) {
+    func awaitValue(f: Frame, v: Value, k: Resumption) {
         do {
             try object.AwaitValue(v, onFulfilled: { [unowned self] val in
                 f.acc = val
@@ -195,7 +195,7 @@ extension Engine {
         }
     }
 
-    func resume(_ k: Resumption, _ thrown: Value?) {
+    func resume(k: Resumption, thrown: Value?) {
         switch k {
         case .asyncFunction(let f, let p):
             asyncStep(f, p, throwing: thrown)
@@ -206,7 +206,7 @@ extension Engine {
 
     // MARK: async generators
 
-    func asyncGeneratorEnqueue(_ thisV: Value, _ mode: int, _ v: Value) -> Value {
+    func asyncGeneratorEnqueue(thisV: Value, mode: int, v: Value) -> Value {
         let r = object.CurrentRealm()
         let p = object.PromiseObject(proto: r.PromisePrototype)
         guard case .object(let o) = thisV, let g = o as? GeneratorObject, g.isAsync else {
@@ -220,7 +220,7 @@ extension Engine {
         return .object(p)
     }
 
-    func asyncGeneratorResumeNext(_ g: GeneratorObject) {
+    func asyncGeneratorResumeNext(g: GeneratorObject) {
         while true {
             if g.state == .executing || g.state == .awaitingReturn { return }
             guard let req = g.queue.first else { return }
@@ -271,7 +271,7 @@ extension Engine {
 
     /// asyncGeneratorSettle settles the request at the head of the queue and
     /// moves on to the next one.
-    func asyncGeneratorSettle(_ g: GeneratorObject, _ v: Value, done: bool, rejected: bool) {
+    func asyncGeneratorSettle(g: GeneratorObject, v: Value, done: bool, rejected: bool) {
         if g.queue.isEmpty { return }
         let req = g.queue.removeFirst()
         if rejected {
@@ -282,7 +282,7 @@ extension Engine {
         asyncGeneratorResumeNext(g)
     }
 
-    func asyncGeneratorRun(_ g: GeneratorObject, _ f: Frame, throwing: Value?) {
+    func asyncGeneratorRun(g: GeneratorObject, f: Frame, throwing: Value?) {
         let e: Exit
         do {
             e = try run(f, throwing: throwing)
@@ -314,7 +314,7 @@ extension Engine {
     /// Install gives a realm the methods that run generators, async
     /// generators and async-from-sync iterators, which live here beside
     /// the frames they resume.
-    public func Install(_ r: object.Realm) {
+    public func Install(r: object.Realm) {
         r.Engine = self
         let gp = r.GeneratorPrototype
         r.Method(gp, "next", 1) { [unowned self] thisV, args, _ in
@@ -344,7 +344,7 @@ extension Engine {
         installAsyncFromSync(r)
     }
 
-    func generatorOf(_ v: Value, _ method: string) throws -> GeneratorObject {
+    func generatorOf(v: Value, method: string) throws -> GeneratorObject {
         guard case .object(let o) = v, let g = o as? GeneratorObject, !g.isAsync else {
             throw object.ThrowTypeError("\(method) method called on incompatible receiver \(object.Describe(v))")
         }
@@ -354,7 +354,7 @@ extension Engine {
     /// installAsyncFromSync defines %AsyncFromSyncIteratorPrototype%'s
     /// methods (§27.1.6.2): the sync iterator's results, with their values
     /// awaited.
-    func installAsyncFromSync(_ r: object.Realm) {
+    func installAsyncFromSync(r: object.Realm) {
         let p = r.AsyncFromSyncIteratorPrototype
         for (name, mode) in [("next", 0), ("return", 2), ("throw", 1)] {
             r.Method(p, name, 1) { thisV, args, _ in
@@ -427,7 +427,7 @@ final class DisposeScope: object.JSObject {
     var hasAwaited: bool = false
 
     /// Add is AddDisposableResource with CreateDisposableResource (§9.4.3).
-    func Add(_ v: Value, async: bool) throws {
+    func Add(v: Value, async: bool) throws {
         if v.IsNullish {
             if async { resources.append(Resource(value: .undefined, method: .undefined, async: true, awaitResult: false)) }
             return
@@ -454,7 +454,7 @@ final class DisposeScope: object.JSObject {
     /// Next is one step of DisposeResources (ES2026 §9.4.5): (0, _) when
     /// nothing is left, (1, _) when a resource was disposed, (2, v) when v
     /// is to be awaited first.
-    func Next(_ r: object.Realm) -> (int, Value) {
+    func Next(r: object.Realm) -> (int, Value) {
         while true {
             guard let res = resources.popLast() else {
                 if needsAwait && !hasAwaited {
@@ -490,7 +490,7 @@ final class DisposeScope: object.JSObject {
 
     /// Record adds an error: the first is kept as is, each later one wraps
     /// what came before as a SuppressedError.
-    func Record(_ e: Value, _ r: object.Realm) {
+    func Record(e: Value, r: object.Realm) {
         guard let prev = Error else {
             Error = e
             return

@@ -18,7 +18,7 @@ public func CurrentRealmOrNil() -> Realm? {
     return currentRealmStorage
 }
 
-public func SetCurrentRealm(_ r: Realm?) {
+public func SetCurrentRealm(r: Realm?) {
     currentRealmStorage = r
 }
 
@@ -42,7 +42,7 @@ public final class Agent {
 
     public init() {}
 
-    public func Enqueue(_ job: @escaping Job) {
+    public func Enqueue(job: @escaping Job) {
         jobs.append(job)
     }
 
@@ -194,7 +194,7 @@ public final class Realm {
     // MARK: helpers for built-ins
 
     /// Function makes a built-in function.
-    public func Function(_ name: string, _ length: int, _ fn: @escaping NativeFn) -> NativeFunction {
+    public func Function(name: string, length: int, fn: @escaping NativeFn) -> NativeFunction {
         return NativeFunction(realm: self, name: name, length: length, fn)
     }
 
@@ -205,7 +205,7 @@ public final class Realm {
     /// script, so what it captures is the intrinsics, not what a script
     /// may later put in their place. Like a native function, the result
     /// shows no source.
-    public func SelfHosted(_ source: string, _ helpers: [Value]) throws -> JSObject {
+    public func SelfHosted(source: string, helpers: [Value]) throws -> JSObject {
         let factory = try Engine!.IndirectEval(self, str.JSString.From("(" + source + ")"))
         let made = try Call(factory, .undefined, helpers)
         guard case .object(let fn) = made else {
@@ -217,19 +217,19 @@ public final class Realm {
 
     /// Method defines a built-in method on an object: writable,
     /// configurable, not enumerable.
-    public func Method(_ on: JSObject, _ name: string, _ length: int, _ fn: @escaping NativeFn) {
+    public func Method(on: JSObject, name: string, length: int, fn: @escaping NativeFn) {
         let f = NativeFunction(realm: self, name: name, length: length, fn)
         on.DefineData(Key(name), .object(f), writable: true, enumerable: false, configurable: true)
     }
 
     /// SymbolMethod defines a method keyed by a well-known symbol.
-    public func SymbolMethod(_ on: JSObject, _ sym: value.Symbol, _ length: int, writable: bool = true, configurable: bool = true, _ fn: @escaping NativeFn) {
+    public func SymbolMethod(on: JSObject, sym: value.Symbol, length: int, writable: bool = true, configurable: bool = true, fn: @escaping NativeFn) {
         let f = NativeFunction(realm: self, symbolName: sym, prefix: "", length: length, fn)
         on.DefineData(.symbol(sym), .object(f), writable: writable, enumerable: false, configurable: configurable)
     }
 
     /// Getter defines a built-in accessor with only a getter.
-    public func Getter(_ on: JSObject, _ key: value.PropertyKey, _ fn: @escaping NativeFn) {
+    public func Getter(on: JSObject, key: value.PropertyKey, fn: @escaping NativeFn) {
         var name = ""
         switch key {
         case .string(let s): name = s.String
@@ -241,7 +241,7 @@ public final class Realm {
     }
 
     /// Accessor defines a built-in accessor pair.
-    public func Accessor(_ on: JSObject, _ name: string, get: @escaping NativeFn, set: @escaping NativeFn) {
+    public func Accessor(on: JSObject, name: string, get: @escaping NativeFn, set: @escaping NativeFn) {
         let g = NativeFunction(realm: self, name: "get " + name, length: 0, get)
         let s = NativeFunction(realm: self, name: "set " + name, length: 1, set)
         on.DefineAccessorDirect(Key(name), getter: g, setter: s, enumerable: false, configurable: true)
@@ -249,7 +249,7 @@ public final class Realm {
 
     /// Constructor makes a built-in constructor with its prototype object
     /// and defines it on the global object.
-    public func Constructor(_ name: string, _ length: int, prototype: JSObject, global: bool = true, _ fn: @escaping NativeFn) -> NativeFunction {
+    public func Constructor(name: string, length: int, prototype: JSObject, global: bool = true, fn: @escaping NativeFn) -> NativeFunction {
         let f = NativeFunction(realm: self, name: name, length: length, constructor: true, fn)
         f.DefineData(keyPrototype, .object(prototype), writable: false, enumerable: false, configurable: false)
         prototype.DefineData(keyConstructor, .object(f), writable: true, enumerable: false, configurable: true)
@@ -260,7 +260,7 @@ public final class Realm {
     }
 
     /// Value defines a global value property.
-    public func DefineGlobal(_ name: string, _ v: Value) {
+    public func DefineGlobal(name: string, v: Value) {
         Global.DefineData(Key(name), v, writable: true, enumerable: false, configurable: true)
     }
 }
@@ -272,7 +272,7 @@ public final class FunctionPrototypeObject: JSObject {
         super.init(proto: proto)
     }
     public override var IsCallable: bool { return true }
-    public override func Call(_ this: Value, _ args: [Value]) throws -> Value {
+    public override func Call(this: Value, args: [Value]) throws -> Value {
         return .undefined
     }
 }

@@ -14,16 +14,16 @@ import (
 
 typealias Value = object.Value
 
-func key(_ s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
+func key(s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
 
 /// Install defines String and RegExp.
-public func Install(_ r: object.Realm) {
+public func Install(r: object.Realm) {
     installString(r)
     installRegExp(r)
 }
 
 /// thisString is RequireObjectCoercible(this) then ToString.
-func thisString(_ v: Value, _ method: string) throws -> str.JSString {
+func thisString(v: Value, method: string) throws -> str.JSString {
     if case .string(let s) = v { return s }
     if v.IsNullish {
         throw object.ThrowTypeError("String.prototype.\(method) called on null or undefined")
@@ -31,13 +31,13 @@ func thisString(_ v: Value, _ method: string) throws -> str.JSString {
     return try object.ToString(v)
 }
 
-func thisStringValue(_ v: Value, _ method: string) throws -> str.JSString {
+func thisStringValue(v: Value, method: string) throws -> str.JSString {
     if case .string(let s) = v { return s }
     if case .object(let o) = v, let so = o as? object.StringObject { return so.Str }
     throw object.ThrowTypeError("String.prototype.\(method) requires that 'this' be a String")
 }
 
-func units(_ u: [uint16], _ from: int, _ to: int) -> str.JSString {
+func units(u: [uint16], from: int, to: int) -> str.JSString {
     if from >= to { return str.JSString.Empty }
     var out: [uint16] = []
     out.reserveCapacity(to - from)
@@ -46,21 +46,21 @@ func units(_ u: [uint16], _ from: int, _ to: int) -> str.JSString {
     return str.JSString(out)
 }
 
-func clampIndex(_ d: float64, _ len: int) -> int {
+func clampIndex(d: float64, len: int) -> int {
     if d < 0 { return 0 }
     if d > float64(len) { return len }
     return int(d)
 }
 
 /// IsRegExp (§7.2.6).
-public func IsRegExp(_ v: Value) throws -> bool {
+public func IsRegExp(v: Value) throws -> bool {
     guard case .object(let o) = v else { return false }
     let m = try o.Get(.symbol(value.SymMatch), v)
     if !m.IsUndefined { return m.Truthy }
     return o.Kind == .regexp
 }
 
-func indexOf(_ u: [uint16], _ needle: [uint16], _ from: int) -> int {
+func indexOf(u: [uint16], needle: [uint16], from: int) -> int {
     if needle.count == 0 { return from <= u.count ? from : -1 }
     var i = from
     while i + needle.count <= u.count {
@@ -76,7 +76,7 @@ func indexOf(_ u: [uint16], _ needle: [uint16], _ from: int) -> int {
 
 // MARK: String (§22.1)
 
-func installString(_ r: object.Realm) {
+func installString(r: object.Realm) {
     let sp = r.StringPrototype
     // String.prototype is itself a String exotic object for "".
     let ctor = r.Constructor("String", 1, prototype: sp) { _, args, nt in
@@ -160,7 +160,7 @@ func installString(_ r: object.Realm) {
         for a in args { s = s.Concat(try object.ToString(a)) }
         return .string(s)
     }
-    func searchMethod(_ name: string, _ body: @escaping ([uint16], [uint16], Value) throws -> Value) {
+    func searchMethod(name: string, body: @escaping ([uint16], [uint16], Value) throws -> Value) {
         r.Method(sp, name, 1) { thisV, args, _ in
             let s = try thisString(thisV, name)
             let search = object.Arg(args, 0)
@@ -249,7 +249,7 @@ func installString(_ r: object.Realm) {
         while i < int(n) { out.append(contentsOf: u); i += 1 }
         return .string(str.JSString(out))
     }
-    func pad(_ name: string, atStart: bool) {
+    func pad(name: string, atStart: bool) {
         r.Method(sp, name, 2) { thisV, args, _ in
             let s = try thisString(thisV, name)
             let maxLen = try object.ToLength(object.Arg(args, 0))
@@ -268,7 +268,7 @@ func installString(_ r: object.Realm) {
     }
     pad("padStart", atStart: true)
     pad("padEnd", atStart: false)
-    func trim(_ name: string, _ start: bool, _ end: bool) -> object.NativeFunction {
+    func trim(name: string, start: bool, end: bool) -> object.NativeFunction {
         let f = r.Function(name, 0) { thisV, _, _ in
             let u = try thisString(thisV, name).Units
             var a = 0
@@ -286,7 +286,7 @@ func installString(_ r: object.Realm) {
     sp.DefineData(key("trimLeft"), .object(ts), writable: true, enumerable: false, configurable: true)
     sp.DefineData(key("trimRight"), .object(te), writable: true, enumerable: false, configurable: true)
 
-    func caseMethod(_ name: string, upper: bool) {
+    func caseMethod(name: string, upper: bool) {
         r.Method(sp, name, 0) { thisV, _, _ in
             let u = try thisString(thisV, name).Units
             var ascii = true
@@ -352,7 +352,7 @@ func installString(_ r: object.Realm) {
     }
 
     // Methods that defer to a RegExp's symbol methods (§22.1.3).
-    func regexpMethod(_ name: string, _ sym: value.Symbol, _ length: int, _ fallback: @escaping (str.JSString, Value, [Value]) throws -> Value) {
+    func regexpMethod(name: string, sym: value.Symbol, length: int, fallback: @escaping (str.JSString, Value, [Value]) throws -> Value) {
         r.Method(sp, name, length) { thisV, args, _ in
             if thisV.IsNullish {
                 throw object.ThrowTypeError("String.prototype.\(name) called on null or undefined")
@@ -459,7 +459,7 @@ func installString(_ r: object.Realm) {
     installStringIterator(r, sp)
 }
 
-func relative(_ d: float64, _ len: int) -> int {
+func relative(d: float64, len: int) -> int {
     if d < 0 {
         let x = float64(len) + d
         return x < 0 ? 0 : int(x)
@@ -469,7 +469,7 @@ func relative(_ d: float64, _ len: int) -> int {
 
 /// replaceString is String.prototype.replace and replaceAll with a
 /// string pattern (§22.1.3.19, §22.1.3.20).
-func replaceString(_ s: str.JSString, _ searchV: Value, _ replaceV: Value, all: bool) throws -> Value {
+func replaceString(s: str.JSString, searchV: Value, replaceV: Value, all: bool) throws -> Value {
     let search = try object.ToString(searchV)
     let functional = replaceV.IsCallable
     let replaceStr = functional ? str.JSString.Empty : try object.ToString(replaceV)
@@ -501,7 +501,7 @@ func replaceString(_ s: str.JSString, _ searchV: Value, _ replaceV: Value, all: 
 /// GetSubstitution (§22.1.3.19.1): the replacement template's $
 /// patterns. captures are the groups (undefined for unmatched), and
 /// namedCaptures the groups object, when the pattern has names.
-public func GetSubstitution(_ matched: str.JSString, _ s: str.JSString, _ position: int, _ captures: [Value], _ namedCaptures: object.JSObject?, _ template: str.JSString) -> str.JSString {
+public func GetSubstitution(matched: str.JSString, s: str.JSString, position: int, captures: [Value], namedCaptures: object.JSObject?, template: str.JSString) -> str.JSString {
     let t = template.Units
     if !t.contains(0x24) { return template }
     let u = s.Units
@@ -570,11 +570,11 @@ public func GetSubstitution(_ matched: str.JSString, _ s: str.JSString, _ positi
 /// LocaleCompare orders strings roughly as ICU's root collation does for
 /// Latin text: letters compared without accents or case first, then
 /// accents, then lowercase before uppercase, then code units.
-public func LocaleCompare(_ a: str.JSString, _ b: str.JSString) -> int {
+public func LocaleCompare(a: str.JSString, b: str.JSString) -> int {
     if a.Equals(b) { return 0 }
     let da = norm.Decompose(utf16.CodePoints(a.Units), compat: true)
     let db = norm.Decompose(utf16.CodePoints(b.Units), compat: true)
-    func primary(_ cps: [uint32]) -> [uint32] {
+    func primary(cps: [uint32]) -> [uint32] {
         var out: [uint32] = []
         for cp in cps {
             let cat = unicode.Category(cp)
@@ -583,7 +583,7 @@ public func LocaleCompare(_ a: str.JSString, _ b: str.JSString) -> int {
         }
         return out
     }
-    func rank(_ cp: uint32) -> int {
+    func rank(cp: uint32) -> int {
         // Whitespace and punctuation sort before digits, digits before letters.
         if token.IsSpace(cp) { return 0 }
         if unicode.IsLetter(cp) { return 3 }
@@ -636,13 +636,13 @@ public final class StringIterator: object.JSObject {
     public var Iterated: [uint16]?
     public var Position: int = 0
 
-    public init(_ s: str.JSString, proto: object.JSObject) {
+    public init(s: str.JSString, proto: object.JSObject) {
         self.Iterated = s.Units
         super.init(proto: proto)
     }
 }
 
-func installStringIterator(_ r: object.Realm, _ sp: object.JSObject) {
+func installStringIterator(r: object.Realm, sp: object.JSObject) {
     let sip = object.JSObject(proto: r.IteratorPrototype)
     r.Intrinsics["StringIteratorPrototype"] = sip
     r.SymbolMethod(sp, value.SymIterator, 0) { thisV, _, _ in

@@ -13,7 +13,7 @@ import (
 /// 0.d1d2...dk × 10^n. It reads the digits from the runtime's shortest
 /// formatter, which prints forms like 123.0, 0.30000000000000004, 1e-07
 /// and 1.2345e+21.
-func shortestDigits(_ d: float64) -> (digits: [uint8], n: int) {
+func shortestDigits(d: float64) -> (digits: [uint8], n: int) {
     let text = "\(d)"
     var digits: [uint8] = []
     var pointAt = -1
@@ -47,7 +47,7 @@ func shortestDigits(_ d: float64) -> (digits: [uint8], n: int) {
 }
 
 /// NumberToString is Number::toString(x) in radix 10.
-public func NumberToString(_ x: float64) -> string {
+public func NumberToString(x: float64) -> string {
     if x.isNaN { return "NaN" }
     if x == 0 { return "0" }
     if x.isInfinite { return x < 0 ? "-Infinity" : "Infinity" }
@@ -89,7 +89,7 @@ public func NumberToString(_ x: float64) -> string {
 }
 
 /// NumberToJSString is NumberToString as a JSString.
-public func NumberToJSString(_ x: float64) -> str.JSString {
+public func NumberToJSString(x: float64) -> str.JSString {
     if x >= 0 && x < 10 && x == x.rounded(.towardZero) {
         return smallInts[int(x)]
     }
@@ -100,7 +100,7 @@ let smallInts: [str.JSString] = [str.Name("0"), str.Name("1"), str.Name("2"), st
 
 /// NumberToRadixString is Number.prototype.toString(radix) for radix != 10,
 /// after V8's DoubleToRadixCString.
-public func NumberToRadixString(_ value: float64, _ radix: int) -> string {
+public func NumberToRadixString(value: float64, radix: int) -> string {
     if value.isNaN { return "NaN" }
     if value.isInfinite { return value < 0 ? "-Infinity" : "Infinity" }
     if value == 0 { return "0" }
@@ -181,7 +181,7 @@ public func NumberToRadixString(_ value: float64, _ radix: int) -> string {
     return string(decoding: out, as: UTF8.self)
 }
 
-func nextUp(_ d: float64) -> float64 {
+func nextUp(d: float64) -> float64 {
     if d.isNaN || (d.isInfinite && d > 0) { return d }
     if d == 0 { return float64(bitPattern: 1) }
     let b = d.bitPattern
@@ -194,7 +194,7 @@ func nextUp(_ d: float64) -> float64 {
 /// exactDecimal expands a finite, positive double exactly: digits with no
 /// leading zeros, and the position of the decimal point within them
 /// (value = 0.digits × 10^point).
-func exactDecimal(_ d: float64) -> (digits: [uint8], point: int) {
+func exactDecimal(d: float64) -> (digits: [uint8], point: int) {
     let bits = d.bitPattern
     let exp = int((bits >> 52) & 0x7FF)
     var mant = bits & 0xFFFFFFFFFFFFF
@@ -224,7 +224,7 @@ func exactDecimal(_ d: float64) -> (digits: [uint8], point: int) {
 /// roundDigits rounds a digit string to keep `keep` digits, half up (the
 /// spec picks the larger n on a tie). It returns the new digits and
 /// whether a carry grew the number by a digit.
-func roundDigits(_ digits: [uint8], _ keep: int) -> (digits: [uint8], carried: bool) {
+func roundDigits(digits: [uint8], keep: int) -> (digits: [uint8], carried: bool) {
     if keep < 0 { return ([], false) }
     if keep >= digits.count {
         var out = digits
@@ -255,7 +255,7 @@ func roundDigits(_ digits: [uint8], _ keep: int) -> (digits: [uint8], carried: b
 
 /// ToFixed is Number.prototype.toFixed for 0 <= f <= 100, x finite and
 /// below 1e21 in magnitude.
-public func ToFixed(_ x: float64, _ f: int) -> string {
+public func ToFixed(x: float64, f: int) -> string {
     var neg = x < 0
     let v = neg ? -x : x
     var out: [uint8] = []
@@ -301,7 +301,7 @@ public func ToFixed(_ x: float64, _ f: int) -> string {
 
 /// ToExponential is Number.prototype.toExponential; f < 0 means as many
 /// digits as needed (the shortest form).
-public func ToExponential(_ x: float64, _ f: int) -> string {
+public func ToExponential(x: float64, f: int) -> string {
     let neg = x < 0
     let v = neg ? -x : x
     var digits: [uint8]
@@ -337,7 +337,7 @@ public func ToExponential(_ x: float64, _ f: int) -> string {
 }
 
 /// ToPrecision is Number.prototype.toPrecision for 1 <= p <= 100.
-public func ToPrecision(_ x: float64, _ p: int) -> string {
+public func ToPrecision(x: float64, p: int) -> string {
     let neg = x < 0
     let v = neg ? -x : x
     var digits: [uint8]
@@ -386,7 +386,7 @@ public func ToPrecision(_ x: float64, _ p: int) -> string {
 // MARK: StringToNumber (§7.1.4.1.1)
 
 /// TrimSpace removes leading and trailing WhiteSpace and line terminators.
-public func TrimSpace(_ u: [uint16]) -> [uint16] {
+public func TrimSpace(u: [uint16]) -> [uint16] {
     var a = 0
     var b = u.count
     while a < b && token.IsSpace(uint32(u[a])) { a += 1 }
@@ -400,7 +400,7 @@ public func TrimSpace(_ u: [uint16]) -> [uint16] {
 
 /// StringToNumber converts a string by the StringNumericLiteral grammar:
 /// NaN if it doesn't match.
-public func StringToNumber(_ s: str.JSString) -> float64 {
+public func StringToNumber(s: str.JSString) -> float64 {
     let u = TrimSpace(s.Units)
     if u.isEmpty { return 0 }
     var bytes: [uint8] = []
@@ -411,7 +411,7 @@ public func StringToNumber(_ s: str.JSString) -> float64 {
     return parseNumericLiteral(bytes)
 }
 
-func parseNumericLiteral(_ b: [uint8]) -> float64 {
+func parseNumericLiteral(b: [uint8]) -> float64 {
     let n = b.count
     // 0x, 0o, 0b: no sign allowed.
     if n > 2 && b[0] == 0x30 {
@@ -477,7 +477,7 @@ func parseNumericLiteral(_ b: [uint8]) -> float64 {
 
 /// ParseFloat is the global parseFloat: the longest prefix that is a
 /// StrDecimalLiteral.
-public func ParseFloat(_ s: str.JSString) -> float64 {
+public func ParseFloat(s: str.JSString) -> float64 {
     let u = TrimSpace(s.Units)
     var b: [uint8] = []
     for c in u {
@@ -527,7 +527,7 @@ public func ParseFloat(_ s: str.JSString) -> float64 {
 }
 
 /// ParseInt is the global parseInt.
-public func ParseInt(_ s: str.JSString, _ radixIn: int) -> float64 {
+public func ParseInt(s: str.JSString, radixIn: int) -> float64 {
     let u = TrimSpace(s.Units)
     var i = 0
     var neg = false
@@ -578,7 +578,7 @@ public func ParseInt(_ s: str.JSString, _ radixIn: int) -> float64 {
 // MARK: integer conversions (§7.1.6–§7.1.11)
 
 /// ToInt32 wraps a double modulo 2^32 into the signed range.
-public func DoubleToInt32(_ d: float64) -> int32 {
+public func DoubleToInt32(d: float64) -> int32 {
     if d.isNaN || d.isInfinite { return 0 }
     if d >= -2147483648.0 && d <= 2147483647.0 {
         return int32(d)
@@ -590,18 +590,18 @@ public func DoubleToInt32(_ d: float64) -> int32 {
     return int32(bitPattern: u)
 }
 
-public func DoubleToUint32(_ d: float64) -> uint32 {
+public func DoubleToUint32(d: float64) -> uint32 {
     return uint32(bitPattern: DoubleToInt32(d))
 }
 
 /// ToIntegerOrInfinity (§7.1.5).
-public func ToIntegerOrInfinity(_ d: float64) -> float64 {
+public func ToIntegerOrInfinity(d: float64) -> float64 {
     if d.isNaN || d == 0 { return 0 }
     if d.isInfinite { return d }
     return d.rounded(.towardZero)
 }
 
 /// IsIntegral says whether a double is an integer (Number.isInteger).
-public func IsIntegral(_ d: float64) -> bool {
+public func IsIntegral(d: float64) -> bool {
     return !d.isNaN && !d.isInfinite && d == d.rounded(.towardZero)
 }

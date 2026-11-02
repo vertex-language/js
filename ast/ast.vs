@@ -104,11 +104,11 @@ public final class Scope {
         return Kind == .function || Kind == .script || Kind == .module || Kind == .eval
     }
 
-    public func Lookup(_ name: string) -> Binding? {
+    public func Lookup(name: string) -> Binding? {
         return Bindings[name]
     }
 
-    public func Declare(_ name: string, _ kind: BindingKind) -> Binding {
+    public func Declare(name: string, kind: BindingKind) -> Binding {
         if let b = Bindings[name] { return b }
         let b = Binding(name: name, kind: kind)
         b.Scope = self
@@ -187,26 +187,26 @@ public enum Expr {
 /// Pos is a bare source position, for the payloads that need nothing else.
 public final class Pos {
     public let At: int
-    public init(_ at: int) { self.At = at }
+    public init(at: int) { self.At = at }
 }
 
 public final class NumberLit {
     public let Value: float64
     public let At: int
-    public init(_ v: float64, at: int) { self.Value = v; self.At = at }
+    public init(v: float64, at: int) { self.Value = v; self.At = at }
 }
 
 public final class BigIntLit {
     /// Digits is the literal as written without the n, with its 0x, 0o or 0b prefix.
     public let Digits: string
     public let At: int
-    public init(_ d: string, at: int) { self.Digits = d; self.At = at }
+    public init(d: string, at: int) { self.Digits = d; self.At = at }
 }
 
 public final class StringLit {
     public let Value: [uint16]
     public let At: int
-    public init(_ v: [uint16], at: int) { self.Value = v; self.At = at }
+    public init(v: [uint16], at: int) { self.Value = v; self.At = at }
 }
 
 public final class TemplateLit {
@@ -243,7 +243,7 @@ public final class RegExpLit {
 public final class BoolLit {
     public let Value: bool
     public let At: int
-    public init(_ v: bool, at: int) { self.Value = v; self.At = at }
+    public init(v: bool, at: int) { self.Value = v; self.At = at }
 }
 
 public final class Identifier {
@@ -255,7 +255,7 @@ public final class Identifier {
     public var Dynamic: bool = false
     /// Depth is how many contexts out the binding's context is, when captured.
     public var Depth: int = 0
-    public init(_ name: string, at: int) { self.Name = name; self.At = at }
+    public init(name: string, at: int) { self.Name = name; self.At = at }
 }
 
 public final class ThisExpr {
@@ -545,19 +545,19 @@ public final class MemberExpr {
 public final class OptionalChain {
     public var Expression: Expr
     public let At: int
-    public init(_ e: Expr, at: int) { self.Expression = e; self.At = at }
+    public init(e: Expr, at: int) { self.Expression = e; self.At = at }
 }
 
 public final class SequenceExpr {
     public var Expressions: [Expr]
     public let At: int
-    public init(_ exprs: [Expr], at: int) { self.Expressions = exprs; self.At = at }
+    public init(exprs: [Expr], at: int) { self.Expressions = exprs; self.At = at }
 }
 
 public final class SpreadElement {
     public var Argument: Expr
     public let At: int
-    public init(_ arg: Expr, at: int) { self.Argument = arg; self.At = at }
+    public init(arg: Expr, at: int) { self.Argument = arg; self.At = at }
 }
 
 public final class YieldExpr {
@@ -570,13 +570,13 @@ public final class YieldExpr {
 public final class AwaitExpr {
     public var Argument: Expr
     public let At: int
-    public init(_ arg: Expr, at: int) { self.Argument = arg; self.At = at }
+    public init(arg: Expr, at: int) { self.Argument = arg; self.At = at }
 }
 
 public final class ImportCall {
     public var Source: Expr
     public let At: int
-    public init(_ src: Expr, at: int) { self.Source = src; self.At = at }
+    public init(src: Expr, at: int) { self.Source = src; self.At = at }
 }
 
 public final class PrivateInExpr {
@@ -590,7 +590,7 @@ public final class PrivateInExpr {
 public final class ParenExpr {
     public var Expression: Expr
     public let At: int
-    public init(_ e: Expr, at: int) { self.Expression = e; self.At = at }
+    public init(e: Expr, at: int) { self.Expression = e; self.At = at }
 }
 
 // MARK: patterns
@@ -688,14 +688,14 @@ public final class ExprStmt {
     public let At: int
     /// Directive is set for a "use strict"-style prologue string.
     public var Directive: bool = false
-    public init(_ e: Expr, at: int) { self.Expression = e; self.At = at }
+    public init(e: Expr, at: int) { self.Expression = e; self.At = at }
 }
 
 public final class BlockStmt {
     public var Body: [Stmt]
     public let At: int
     public var Scope: Scope? = nil
-    public init(_ body: [Stmt], at: int) { self.Body = body; self.At = at }
+    public init(body: [Stmt], at: int) { self.Body = body; self.At = at }
 }
 
 public final class IfStmt {
@@ -758,7 +758,7 @@ public final class WhileStmt {
 public final class ReturnStmt {
     public var Argument: Expr?
     public let At: int
-    public init(_ arg: Expr?, at: int) { self.Argument = arg; self.At = at }
+    public init(arg: Expr?, at: int) { self.Argument = arg; self.At = at }
 }
 
 public final class JumpStmt {
@@ -770,7 +770,7 @@ public final class JumpStmt {
 public final class ThrowStmt {
     public var Argument: Expr
     public let At: int
-    public init(_ arg: Expr, at: int) { self.Argument = arg; self.At = at }
+    public init(arg: Expr, at: int) { self.Argument = arg; self.At = at }
 }
 
 public final class TryStmt {
@@ -864,7 +864,7 @@ public final class ExportDecl {
 // MARK: helpers
 
 /// ExprPos is an expression's source offset.
-public func ExprPos(_ e: Expr) -> int {
+public func ExprPos(e: Expr) -> int {
     switch e {
     case .number(let n): return n.At
     case .bigint(let n): return n.At
@@ -906,7 +906,7 @@ public func ExprPos(_ e: Expr) -> int {
 }
 
 /// StripParens removes the parentheses around an expression.
-public func StripParens(_ e: Expr) -> Expr {
+public func StripParens(e: Expr) -> Expr {
     var cur = e
     while case .paren(let p) = cur {
         cur = p.Expression
@@ -916,7 +916,7 @@ public func StripParens(_ e: Expr) -> Expr {
 
 /// IsAnonymousFunctionDefinition is the spec's test for giving an
 /// anonymous function or class the name of what it is assigned to.
-public func IsAnonymousFunctionDefinition(_ e: Expr) -> bool {
+public func IsAnonymousFunctionDefinition(e: Expr) -> bool {
     switch e {
     case .function(let f): return f.Name.isEmpty
     case .classExpr(let c): return c.Name.isEmpty
@@ -925,7 +925,7 @@ public func IsAnonymousFunctionDefinition(_ e: Expr) -> bool {
 }
 
 /// PatternNames lists the names a binding pattern declares, in order.
-public func PatternNames(_ p: Pattern, _ out: inout [string]) {
+public func PatternNames(p: Pattern, out: inout [string]) {
     switch p {
     case .identifier(let id):
         out.append(id.Name)

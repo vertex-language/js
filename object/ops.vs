@@ -9,14 +9,14 @@ import (
 // MARK: arguments
 
 /// Arg is argument i, or undefined.
-public func Arg(_ args: [Value], _ i: int) -> Value {
+public func Arg(args: [Value], i: int) -> Value {
     return i < args.count ? args[i] : .undefined
 }
 
 // MARK: errors
 
 /// MakeError creates an error object with a message and a stack trace.
-public func MakeError(_ proto: JSObject, _ message: str.JSString) -> JSObject {
+public func MakeError(proto: JSObject, message: str.JSString) -> JSObject {
     let e = JSObject(proto: proto)
     e.Kind = .error
     if message.Length > 0 {
@@ -28,7 +28,7 @@ public func MakeError(_ proto: JSObject, _ message: str.JSString) -> JSObject {
 
 /// InstallStack gives an error its stack property: its name and message,
 /// then the running frames.
-public func InstallStack(_ e: JSObject) {
+public func InstallStack(e: JSObject) {
     guard let r = currentRealmStorage else { return }
     var head = "Error"
     if let n = try? e.Get(keyName, .object(e)), case .string(let ns) = n { head = ns.String }
@@ -41,28 +41,28 @@ public func InstallStack(_ e: JSObject) {
     e.DefineData(keyStack, .string(str.JSString.From(s)), writable: true, enumerable: false, configurable: true)
 }
 
-public func ThrowTypeError(_ msg: string) -> Completion {
+public func ThrowTypeError(msg: string) -> Completion {
     return Completion(.object(MakeError(CurrentRealm().TypeErrorPrototype, str.JSString.From(msg))))
 }
 
-public func ThrowRangeError(_ msg: string) -> Completion {
+public func ThrowRangeError(msg: string) -> Completion {
     return Completion(.object(MakeError(CurrentRealm().RangeErrorPrototype, str.JSString.From(msg))))
 }
 
-public func ThrowReferenceError(_ msg: string) -> Completion {
+public func ThrowReferenceError(msg: string) -> Completion {
     return Completion(.object(MakeError(CurrentRealm().ReferenceErrorPrototype, str.JSString.From(msg))))
 }
 
-public func ThrowSyntaxError(_ msg: string) -> Completion {
+public func ThrowSyntaxError(msg: string) -> Completion {
     return Completion(.object(MakeError(CurrentRealm().SyntaxErrorPrototype, str.JSString.From(msg))))
 }
 
-public func ThrowURIError(_ msg: string) -> Completion {
+public func ThrowURIError(msg: string) -> Completion {
     return Completion(.object(MakeError(CurrentRealm().URIErrorPrototype, str.JSString.From(msg))))
 }
 
 /// Describe is a short form of a value for error messages, as V8 writes them.
-public func Describe(_ v: Value) -> string {
+public func Describe(v: Value) -> string {
     switch v {
     case .undefined, .empty: return "undefined"
     case .null: return "null"
@@ -84,7 +84,7 @@ public func Describe(_ v: Value) -> string {
 }
 
 /// ClassNameOf is the constructor name V8 shows in #<Name>.
-public func ClassNameOf(_ o: JSObject) -> string {
+public func ClassNameOf(o: JSObject) -> string {
     var p: JSObject? = o
     while let x = p {
         if let c = x.OwnSlot(keyConstructor), case .object(let co) = c.Value {
@@ -106,7 +106,7 @@ public enum Hint {
 }
 
 /// ToPrimitive (§7.1.1).
-public func ToPrimitive(_ v: Value, _ hint: Hint = .defaultHint) throws -> Value {
+public func ToPrimitive(v: Value, hint: Hint = .defaultHint) throws -> Value {
     guard case .object(let o) = v else { return v }
     let exotic = try GetMethod(v, .symbol(value.SymToPrimitive))
     if case .object(let f) = exotic {
@@ -120,7 +120,7 @@ public func ToPrimitive(_ v: Value, _ hint: Hint = .defaultHint) throws -> Value
 }
 
 /// OrdinaryToPrimitive (§7.1.1.1).
-public func OrdinaryToPrimitive(_ o: JSObject, _ hint: Hint) throws -> Value {
+public func OrdinaryToPrimitive(o: JSObject, hint: Hint) throws -> Value {
     let order: [value.PropertyKey] = hint == .string ? [keyToString, keyValueOf] : [keyValueOf, keyToString]
     for k in order {
         let m = try o.Get(k, .object(o))
@@ -133,7 +133,7 @@ public func OrdinaryToPrimitive(_ o: JSObject, _ hint: Hint) throws -> Value {
 }
 
 /// ToNumber (§7.1.4).
-public func ToNumber(_ v: Value) throws -> float64 {
+public func ToNumber(v: Value) throws -> float64 {
     switch v {
     case .number(let d): return d
     case .undefined, .empty: return float64.nan
@@ -148,7 +148,7 @@ public func ToNumber(_ v: Value) throws -> float64 {
 }
 
 /// ToNumeric (§7.1.3): a number or a BigInt.
-public func ToNumeric(_ v: Value) throws -> Value {
+public func ToNumeric(v: Value) throws -> Value {
     switch v {
     case .number, .bigint: return v
     case .object:
@@ -161,7 +161,7 @@ public func ToNumeric(_ v: Value) throws -> Value {
 }
 
 /// ToString (§7.1.17).
-public func ToString(_ v: Value) throws -> str.JSString {
+public func ToString(v: Value) throws -> str.JSString {
     switch v {
     case .string(let s): return s
     case .number(let d): return value.NumberToJSString(d)
@@ -181,7 +181,7 @@ let strTrue = str.Name("true")
 let strFalse = str.Name("false")
 
 /// ToPropertyKey (§7.1.19).
-public func ToPropertyKey(_ v: Value) throws -> value.PropertyKey {
+public func ToPropertyKey(v: Value) throws -> value.PropertyKey {
     switch v {
     case .string(let s): return value.PropertyKey.FromString(s)
     case .number(let d): return value.PropertyKey.FromNumber(d)
@@ -194,7 +194,7 @@ public func ToPropertyKey(_ v: Value) throws -> value.PropertyKey {
 }
 
 /// KeyToValue is a property key as a language value.
-public func KeyToValue(_ k: value.PropertyKey) -> Value {
+public func KeyToValue(k: value.PropertyKey) -> Value {
     switch k {
     case .index(let i): return .string(value.NumberToJSString(float64(i)))
     case .string(let s): return .string(s)
@@ -203,7 +203,7 @@ public func KeyToValue(_ k: value.PropertyKey) -> Value {
 }
 
 /// ToObject (§7.1.18).
-public func ToObject(_ v: Value) throws -> JSObject {
+public func ToObject(v: Value) throws -> JSObject {
     let r = CurrentRealm()
     switch v {
     case .object(let o): return o
@@ -235,28 +235,28 @@ public func ToObject(_ v: Value) throws -> JSObject {
 }
 
 /// ToIntegerOrInfinity (§7.1.5).
-public func ToIntegerOrInfinity(_ v: Value) throws -> float64 {
+public func ToIntegerOrInfinity(v: Value) throws -> float64 {
     return value.ToIntegerOrInfinity(try ToNumber(v))
 }
 
-public func ToInt32(_ v: Value) throws -> int32 {
+public func ToInt32(v: Value) throws -> int32 {
     if case .number(let d) = v { return value.DoubleToInt32(d) }
     return value.DoubleToInt32(try ToNumber(v))
 }
 
-public func ToUint32(_ v: Value) throws -> uint32 {
+public func ToUint32(v: Value) throws -> uint32 {
     return uint32(bitPattern: try ToInt32(v))
 }
 
 /// ToLength (§7.1.20).
-public func ToLength(_ v: Value) throws -> float64 {
+public func ToLength(v: Value) throws -> float64 {
     let len = try ToIntegerOrInfinity(v)
     if len <= 0 { return 0 }
     return len < 9007199254740991 ? len : 9007199254740991
 }
 
 /// ToIndex (§7.1.22).
-public func ToIndex(_ v: Value) throws -> int {
+public func ToIndex(v: Value) throws -> int {
     if v.IsUndefined { return 0 }
     let i = try ToIntegerOrInfinity(v)
     if i < 0 || i > 9007199254740991 { throw ThrowRangeError("Invalid index") }
@@ -264,7 +264,7 @@ public func ToIndex(_ v: Value) throws -> int {
 }
 
 /// ToBigInt (§7.1.13).
-public func ToBigInt(_ v: Value) throws -> value.BigInt {
+public func ToBigInt(v: Value) throws -> value.BigInt {
     let p = try ToPrimitive(v, .number)
     switch p {
     case .bigint(let b): return b
@@ -283,7 +283,7 @@ public func ToBigInt(_ v: Value) throws -> value.BigInt {
 }
 
 /// RequireObjectCoercible (§7.2.1).
-public func RequireObjectCoercible(_ v: Value) throws {
+public func RequireObjectCoercible(v: Value) throws {
     if v.IsNullish || v.IsEmpty {
         throw ThrowTypeError("Cannot convert undefined or null to object")
     }
@@ -292,7 +292,7 @@ public func RequireObjectCoercible(_ v: Value) throws {
 // MARK: testing and comparison (§7.2)
 
 /// IsArray (§7.2.2) sees through proxies.
-public func IsArray(_ v: Value) throws -> bool {
+public func IsArray(v: Value) throws -> bool {
     guard case .object(let o) = v else { return false }
     if o.Kind == .array { return true }
     if let p = o as? ProxyObject {
@@ -303,7 +303,7 @@ public func IsArray(_ v: Value) throws -> bool {
 }
 
 /// IsLooselyEqual (§7.2.14), the == operator.
-public func LooseEquals(_ x: Value, _ y: Value) throws -> bool {
+public func LooseEquals(x: Value, y: Value) throws -> bool {
     // Same types compare as ===.
     if sameType(x, y) { return StrictEquals(x, y) }
     if x.IsNullish && y.IsNullish { return true }
@@ -336,7 +336,7 @@ public func LooseEquals(_ x: Value, _ y: Value) throws -> bool {
 }
 
 /// sameType says whether two values are of the same language type.
-func sameType(_ x: Value, _ y: Value) -> bool {
+func sameType(x: Value, y: Value) -> bool {
     switch x {
     case .undefined: return y.IsUndefined
     case .null: return y.IsNull
@@ -352,7 +352,7 @@ func sameType(_ x: Value, _ y: Value) -> bool {
 }
 
 /// compareBigNumber compares a BigInt with a number: -1, 0, 1, or 2 for NaN.
-func compareBigNumber(_ a: value.BigInt, _ b: float64) -> int {
+func compareBigNumber(a: value.BigInt, b: float64) -> int {
     if b.isNaN { return 2 }
     if b.isInfinite { return b > 0 ? -1 : 1 }
     let fl = b.rounded(.down)
@@ -362,7 +362,7 @@ func compareBigNumber(_ a: value.BigInt, _ b: float64) -> int {
 }
 
 /// IsLessThan (§7.2.13): true, false, or nil for undefined (a NaN).
-public func LessThan(_ x: Value, _ y: Value, leftFirst: bool) throws -> bool? {
+public func LessThan(x: Value, y: Value, leftFirst: bool) throws -> bool? {
     var px: Value
     var py: Value
     if leftFirst {
@@ -409,7 +409,7 @@ public func LessThan(_ x: Value, _ y: Value, leftFirst: bool) throws -> bool? {
 
 /// GetV (§7.3.3) gets a property of any value, looking primitives up on
 /// their prototype.
-public func GetV(_ v: Value, _ key: value.PropertyKey) throws -> Value {
+public func GetV(v: Value, key: value.PropertyKey) throws -> Value {
     switch v {
     case .object(let o):
         return try o.Get(key, v)
@@ -433,7 +433,7 @@ public func GetV(_ v: Value, _ key: value.PropertyKey) throws -> Value {
 }
 
 /// KeyDisplay is a key as V8 quotes it in messages.
-public func KeyDisplay(_ k: value.PropertyKey) -> string {
+public func KeyDisplay(k: value.PropertyKey) -> string {
     switch k {
     case .index(let i): return "\(i)"
     case .string(let s): return s.String
@@ -442,12 +442,12 @@ public func KeyDisplay(_ k: value.PropertyKey) -> string {
 }
 
 /// Get (§7.3.2).
-public func Get(_ o: JSObject, _ key: value.PropertyKey) throws -> Value {
+public func Get(o: JSObject, key: value.PropertyKey) throws -> Value {
     return try o.Get(key, .object(o))
 }
 
 /// GetMethod (§7.3.11): undefined for null or undefined, else it must be callable.
-public func GetMethod(_ v: Value, _ key: value.PropertyKey) throws -> Value {
+public func GetMethod(v: Value, key: value.PropertyKey) throws -> Value {
     let f = try GetV(v, key)
     if f.IsNullish { return .undefined }
     if !f.IsCallable {
@@ -457,7 +457,7 @@ public func GetMethod(_ v: Value, _ key: value.PropertyKey) throws -> Value {
 }
 
 /// SetOrThrow is Set(O, P, V, Throw) (§7.3.4).
-public func SetProperty(_ o: JSObject, _ key: value.PropertyKey, _ v: Value, throwing: bool) throws {
+public func SetProperty(o: JSObject, key: value.PropertyKey, v: Value, throwing: bool) throws {
     let ok = try o.Set(key, v, .object(o))
     if !ok && throwing {
         throw ThrowTypeError("Cannot assign to read only property '\(KeyDisplay(key))' of object")
@@ -466,7 +466,7 @@ public func SetProperty(_ o: JSObject, _ key: value.PropertyKey, _ v: Value, thr
 
 /// PutValue for a property reference on any base value, as the
 /// interpreter's assignments do it.
-public func PutProperty(_ base: Value, _ key: value.PropertyKey, _ v: Value, strict: bool) throws {
+public func PutProperty(base: Value, key: value.PropertyKey, v: Value, strict: bool) throws {
     switch base {
     case .object(let o):
         let ok = try o.Set(key, v, base)
@@ -484,46 +484,46 @@ public func PutProperty(_ base: Value, _ key: value.PropertyKey, _ v: Value, str
     }
 }
 
-func DescribeForAssign(_ o: JSObject) -> string {
+func DescribeForAssign(o: JSObject) -> string {
     if o.Kind == .array { return "[object Array]" }
     if o.IsCallable { return Describe(.object(o)) }
     return "#<" + ClassNameOf(o) + ">"
 }
 
 /// CreateDataProperty (§7.3.5).
-public func CreateDataProperty(_ o: JSObject, _ key: value.PropertyKey, _ v: Value) throws -> bool {
+public func CreateDataProperty(o: JSObject, key: value.PropertyKey, v: Value) throws -> bool {
     return try o.DefineOwnProperty(key, PropertyDescriptor.Data(v))
 }
 
 /// CreateDataPropertyOrThrow (§7.3.7).
-public func CreateDataPropertyOrThrow(_ o: JSObject, _ key: value.PropertyKey, _ v: Value) throws {
+public func CreateDataPropertyOrThrow(o: JSObject, key: value.PropertyKey, v: Value) throws {
     if !(try CreateDataProperty(o, key, v)) {
         throw ThrowTypeError("Cannot define property \(KeyDisplay(key)), object is not extensible")
     }
 }
 
 /// DefinePropertyOrThrow (§7.3.8).
-public func DefinePropertyOrThrow(_ o: JSObject, _ key: value.PropertyKey, _ d: PropertyDescriptor) throws {
+public func DefinePropertyOrThrow(o: JSObject, key: value.PropertyKey, d: PropertyDescriptor) throws {
     if !(try o.DefineOwnProperty(key, d)) {
         throw ThrowTypeError("Cannot redefine property: \(KeyDisplay(key))")
     }
 }
 
 /// DeletePropertyOrThrow (§7.3.9).
-public func DeletePropertyOrThrow(_ o: JSObject, _ key: value.PropertyKey) throws {
+public func DeletePropertyOrThrow(o: JSObject, key: value.PropertyKey) throws {
     if !(try o.Delete(key)) {
         throw ThrowTypeError("Cannot delete property '\(KeyDisplay(key))' of \(DescribeForAssign(o))")
     }
 }
 
 /// HasOwnProperty (§7.3.13).
-public func HasOwnProperty(_ o: JSObject, _ key: value.PropertyKey) throws -> bool {
+public func HasOwnProperty(o: JSObject, key: value.PropertyKey) throws -> bool {
     if o.isOrdinaryLookup { return o.find(key) >= 0 }
     return try o.GetOwnProperty(key) != nil
 }
 
 /// Call (§7.3.14).
-public func Call(_ f: Value, _ this: Value, _ args: [Value]) throws -> Value {
+public func Call(f: Value, this: Value, args: [Value]) throws -> Value {
     guard case .object(let o) = f, o.IsCallable else {
         throw ThrowTypeError("\(Describe(f)) is not a function")
     }
@@ -531,18 +531,18 @@ public func Call(_ f: Value, _ this: Value, _ args: [Value]) throws -> Value {
 }
 
 /// Construct (§7.3.15).
-public func Construct(_ f: JSObject, _ args: [Value], _ newTarget: JSObject? = nil) throws -> Value {
+public func Construct(f: JSObject, args: [Value], newTarget: JSObject? = nil) throws -> Value {
     return try f.Construct(args, newTarget ?? f)
 }
 
 /// Invoke (§7.3.21): call a method by name.
-public func Invoke(_ v: Value, _ key: value.PropertyKey, _ args: [Value]) throws -> Value {
+public func Invoke(v: Value, key: value.PropertyKey, args: [Value]) throws -> Value {
     let f = try GetV(v, key)
     return try Call(f, v, args)
 }
 
 /// SetIntegrityLevel (§7.3.16): sealed or frozen.
-public func SetIntegrityLevel(_ o: JSObject, frozen: bool) throws -> bool {
+public func SetIntegrityLevel(o: JSObject, frozen: bool) throws -> bool {
     if !(try o.PreventExtensions()) { return false }
     let keys = try o.OwnPropertyKeys()
     for k in keys {
@@ -559,7 +559,7 @@ public func SetIntegrityLevel(_ o: JSObject, frozen: bool) throws -> bool {
 }
 
 /// TestIntegrityLevel (§7.3.17).
-public func TestIntegrityLevel(_ o: JSObject, frozen: bool) throws -> bool {
+public func TestIntegrityLevel(o: JSObject, frozen: bool) throws -> bool {
     if try o.IsExtensibleObject() { return false }
     for k in try o.OwnPropertyKeys() {
         if let d = try o.GetOwnProperty(k) {
@@ -571,13 +571,13 @@ public func TestIntegrityLevel(_ o: JSObject, frozen: bool) throws -> bool {
 }
 
 /// LengthOfArrayLike (§7.3.18).
-public func LengthOfArrayLike(_ o: JSObject) throws -> int {
+public func LengthOfArrayLike(o: JSObject) throws -> int {
     if let a = o as? ArrayObject { return int(a.Length) }
     return int(try ToLength(try o.Get(keyLength, .object(o))))
 }
 
 /// CreateListFromArrayLike (§7.3.19).
-public func CreateListFromArrayLike(_ v: Value) throws -> [Value] {
+public func CreateListFromArrayLike(v: Value) throws -> [Value] {
     guard case .object(let o) = v else {
         throw ThrowTypeError("CreateListFromArrayLike called on non-object")
     }
@@ -601,7 +601,7 @@ public func CreateListFromArrayLike(_ v: Value) throws -> [Value] {
 }
 
 /// OrdinaryHasInstance (§7.3.22).
-public func OrdinaryHasInstance(_ c: Value, _ o: Value) throws -> bool {
+public func OrdinaryHasInstance(c: Value, o: Value) throws -> bool {
     guard case .object(let cf) = c, cf.IsCallable else { return false }
     if let b = cf as? BoundFunction {
         return try InstanceOf(o, .object(b.Target))
@@ -619,7 +619,7 @@ public func OrdinaryHasInstance(_ c: Value, _ o: Value) throws -> bool {
 }
 
 /// InstanceofOperator (§13.10.2).
-public func InstanceOf(_ v: Value, _ target: Value) throws -> bool {
+public func InstanceOf(v: Value, target: Value) throws -> bool {
     guard case .object = target else {
         throw ThrowTypeError("Right-hand side of 'instanceof' is not an object")
     }
@@ -634,7 +634,7 @@ public func InstanceOf(_ v: Value, _ target: Value) throws -> bool {
 }
 
 /// SpeciesConstructor (§7.3.23).
-public func SpeciesConstructor(_ o: JSObject, _ def: JSObject) throws -> JSObject {
+public func SpeciesConstructor(o: JSObject, def: JSObject) throws -> JSObject {
     let c = try o.Get(keyConstructor, .object(o))
     if c.IsUndefined { return def }
     guard case .object(let co) = c else {
@@ -647,7 +647,7 @@ public func SpeciesConstructor(_ o: JSObject, _ def: JSObject) throws -> JSObjec
 }
 
 /// GetPrototypeFromConstructor (§10.1.14).
-public func GetPrototypeFromConstructor(_ ctor: JSObject, _ fallback: JSObject) throws -> JSObject {
+public func GetPrototypeFromConstructor(ctor: JSObject, fallback: JSObject) throws -> JSObject {
     let p = try ctor.Get(keyPrototype, .object(ctor))
     if case .object(let po) = p { return po }
     // The fallback comes from the constructor's realm.
@@ -657,12 +657,12 @@ public func GetPrototypeFromConstructor(_ ctor: JSObject, _ fallback: JSObject) 
     return fallback
 }
 
-func realmIntrinsicLike(_ o: JSObject, _ r: Realm) -> JSObject {
+func realmIntrinsicLike(o: JSObject, r: Realm) -> JSObject {
     return o
 }
 
 /// OrdinaryCreateFromConstructor (§10.1.13).
-public func OrdinaryCreateFromConstructor(_ ctor: JSObject?, _ fallback: JSObject) throws -> JSObject {
+public func OrdinaryCreateFromConstructor(ctor: JSObject?, fallback: JSObject) throws -> JSObject {
     guard let c = ctor else { return JSObject(proto: fallback) }
     return JSObject(proto: try GetPrototypeFromConstructor(c, fallback))
 }
@@ -674,7 +674,7 @@ public enum EnumKind {
     case entries
 }
 
-public func EnumerableOwnProperties(_ o: JSObject, _ kind: EnumKind) throws -> [Value] {
+public func EnumerableOwnProperties(o: JSObject, kind: EnumKind) throws -> [Value] {
     let keys = try o.OwnPropertyKeys()
     var out: [Value] = []
     let r = CurrentRealm()
@@ -696,7 +696,7 @@ public func EnumerableOwnProperties(_ o: JSObject, _ kind: EnumKind) throws -> [
 }
 
 /// CopyDataProperties (§7.3.25).
-public func CopyDataProperties(_ target: JSObject, _ source: Value, excluded: [value.PropertyKey]) throws {
+public func CopyDataProperties(target: JSObject, source: Value, excluded: [value.PropertyKey]) throws {
     if source.IsNullish { return }
     let from = try ToObject(source)
     for k in try from.OwnPropertyKeys() {
@@ -711,7 +711,7 @@ public func CopyDataProperties(_ target: JSObject, _ source: Value, excluded: [v
 }
 
 /// FromPropertyDescriptor (§6.2.6.4).
-public func FromPropertyDescriptor(_ d: PropertyDescriptor?) -> Value {
+public func FromPropertyDescriptor(d: PropertyDescriptor?) -> Value {
     guard let desc = d else { return .undefined }
     let o = JSObject(proto: CurrentRealm().ObjectPrototype)
     if let v = desc.Value { o.DefineData(keyValue, v) }
@@ -724,7 +724,7 @@ public func FromPropertyDescriptor(_ d: PropertyDescriptor?) -> Value {
 }
 
 /// ToPropertyDescriptor (§6.2.6.5).
-public func ToPropertyDescriptor(_ v: Value) throws -> PropertyDescriptor {
+public func ToPropertyDescriptor(v: Value) throws -> PropertyDescriptor {
     guard case .object(let o) = v else {
         throw ThrowTypeError("Property description must be an object: \(Describe(v))")
     }
@@ -750,7 +750,7 @@ public func ToPropertyDescriptor(_ v: Value) throws -> PropertyDescriptor {
 }
 
 /// CompletePropertyDescriptor (§6.2.6.6).
-public func CompletePropertyDescriptor(_ d: PropertyDescriptor) -> PropertyDescriptor {
+public func CompletePropertyDescriptor(d: PropertyDescriptor) -> PropertyDescriptor {
     var r = d
     if r.IsGeneric || r.IsData {
         if r.Value == nil { r.Value = .undefined }
@@ -767,7 +767,7 @@ public func CompletePropertyDescriptor(_ d: PropertyDescriptor) -> PropertyDescr
 // MARK: arrays
 
 /// CreateArrayFromList (§7.3.18).
-public func CreateArrayFromList(_ r: Realm, _ list: [Value]) -> ArrayObject {
+public func CreateArrayFromList(r: Realm, list: [Value]) -> ArrayObject {
     let a = ArrayObject(proto: r.ArrayPrototype)
     a.Dense = list
     a.Length = uint32(list.count)
@@ -775,7 +775,7 @@ public func CreateArrayFromList(_ r: Realm, _ list: [Value]) -> ArrayObject {
 }
 
 /// ArrayCreate (§10.4.2.2).
-public func ArrayCreate(_ length: float64, proto: JSObject? = nil) throws -> ArrayObject {
+public func ArrayCreate(length: float64, proto: JSObject? = nil) throws -> ArrayObject {
     if length > 4294967295 { throw ThrowRangeError("Invalid array length") }
     let a = ArrayObject(proto: proto ?? CurrentRealm().ArrayPrototype)
     a.Length = uint32(length)
@@ -783,7 +783,7 @@ public func ArrayCreate(_ length: float64, proto: JSObject? = nil) throws -> Arr
 }
 
 /// ArraySpeciesCreate (§10.4.2.3).
-public func ArraySpeciesCreate(_ original: JSObject, _ length: float64) throws -> JSObject {
+public func ArraySpeciesCreate(original: JSObject, length: float64) throws -> JSObject {
     if !(try IsArray(.object(original))) {
         return try ArrayCreate(length)
     }
@@ -826,7 +826,7 @@ public enum ArithOp {
 }
 
 /// Add is the + operator.
-public func Add(_ x: Value, _ y: Value) throws -> Value {
+public func Add(x: Value, y: Value) throws -> Value {
     if case .number(let a) = x, case .number(let b) = y { return .number(a + b) }
     if case .string(let a) = x, case .string(let b) = y { return .string(a.Concat(b)) }
     let px = try ToPrimitive(x)
@@ -840,7 +840,7 @@ public func Add(_ x: Value, _ y: Value) throws -> Value {
 }
 
 /// Arithmetic applies a numeric operator after ToNumeric.
-public func Arithmetic(_ op: ArithOp, _ x: Value, _ y: Value) throws -> Value {
+public func Arithmetic(op: ArithOp, x: Value, y: Value) throws -> Value {
     let nx = try ToNumeric(x)
     let ny = try ToNumeric(y)
     if case .number(let a) = nx, case .number(let b) = ny {
@@ -852,7 +852,7 @@ public func Arithmetic(_ op: ArithOp, _ x: Value, _ y: Value) throws -> Value {
     throw ThrowTypeError("Cannot mix BigInt and other types, use explicit conversions")
 }
 
-public func NumberOp(_ op: ArithOp, _ a: float64, _ b: float64) -> float64 {
+public func NumberOp(op: ArithOp, a: float64, b: float64) -> float64 {
     switch op {
     case .add: return a + b
     case .sub: return a - b
@@ -879,7 +879,7 @@ public func NumberOp(_ op: ArithOp, _ a: float64, _ b: float64) -> float64 {
 }
 
 /// NumberMod is the % operator: the result takes the dividend's sign.
-public func NumberMod(_ a: float64, _ b: float64) -> float64 {
+public func NumberMod(a: float64, b: float64) -> float64 {
     if a.isNaN || b.isNaN || a.isInfinite || b == 0 { return float64.nan }
     if b.isInfinite { return a }
     if a == 0 { return a }
@@ -889,7 +889,7 @@ public func NumberMod(_ a: float64, _ b: float64) -> float64 {
 }
 
 /// NumberPow is Number::exponentiate (§6.1.6.1.3).
-public func NumberPow(_ base: float64, _ e: float64) -> float64 {
+public func NumberPow(base: float64, e: float64) -> float64 {
     if e.isNaN { return float64.nan }
     if e == 0 { return 1 }
     if base.isNaN { return float64.nan }
@@ -902,7 +902,7 @@ public func NumberPow(_ base: float64, _ e: float64) -> float64 {
     return math.Pow(base, e)
 }
 
-public func BigIntOp(_ op: ArithOp, _ a: value.BigInt, _ b: value.BigInt) throws -> value.BigInt {
+public func BigIntOp(op: ArithOp, a: value.BigInt, b: value.BigInt) throws -> value.BigInt {
     switch op {
     case .add: return value.BigInt.Add(a, b)
     case .sub: return value.BigInt.Sub(a, b)
@@ -929,6 +929,6 @@ public func BigIntOp(_ op: ArithOp, _ a: value.BigInt, _ b: value.BigInt) throws
 }
 
 /// TypeOfValue is the typeof operator as a string value.
-public func TypeOfValue(_ v: Value) -> Value {
+public func TypeOfValue(v: Value) -> Value {
     return .string(str.Name(v.TypeOf))
 }

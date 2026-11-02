@@ -11,7 +11,7 @@ import (
 
 typealias Value = object.Value
 
-func key(_ s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
+func key(s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
 
 // MARK: the table
 
@@ -22,7 +22,7 @@ public struct Key: Hashable {
     let bits: uint64
     let text: str.JSString?
 
-    public init(_ v: Value) {
+    public init(v: Value) {
         switch v {
         case .number(let d):
             var n = d
@@ -90,18 +90,18 @@ public final class Table {
     /// Epoch counts compactions; an iterator remembers the one it saw.
     public var Epoch: int { return removed.count }
 
-    public func Find(_ k: Value) -> int {
+    public func Find(k: Value) -> int {
         return index[Key(k)] ?? -1
     }
 
-    public func Get(_ k: Value) -> Value? {
+    public func Get(k: Value) -> Value? {
         let i = Find(k)
         return i < 0 ? nil : Values[i]
     }
 
-    public func Has(_ k: Value) -> bool { return Find(k) >= 0 }
+    public func Has(k: Value) -> bool { return Find(k) >= 0 }
 
-    public func Set(_ k: Value, _ v: Value) {
+    public func Set(k: Value, v: Value) {
         var kk = k
         if case .number(let d) = k, d == 0 { kk = .number(0) }
         let hk = Key(kk)
@@ -115,7 +115,7 @@ public final class Table {
         Size += 1
     }
 
-    public func Delete(_ k: Value) -> bool {
+    public func Delete(k: Value) -> bool {
         let hk = Key(k)
         guard let i = index[hk] else { return false }
         index[hk] = nil
@@ -159,7 +159,7 @@ public final class Table {
     }
 
     /// Remap moves an iterator's index from the epoch it saw to now.
-    public func Remap(_ i: int, from epoch: int) -> int {
+    public func Remap(i: int, from epoch: int) -> int {
         var at = i
         var e = epoch
         while e < removed.count {
@@ -201,7 +201,7 @@ public final class WeakCollection: object.JSObject {
 }
 
 /// CanBeHeldWeakly (§9.13).
-public func CanBeHeldWeakly(_ v: Value) -> bool {
+public func CanBeHeldWeakly(v: Value) -> bool {
     if case .object = v { return true }
     if case .symbol(let s) = v { return s.RegistryKey == nil }
     return false
@@ -209,13 +209,13 @@ public func CanBeHeldWeakly(_ v: Value) -> bool {
 
 // MARK: install
 
-public func Install(_ r: object.Realm) {
+public func Install(r: object.Realm) {
     installMap(r)
     installSet(r)
     installWeak(r)
 }
 
-func thisCollection(_ v: Value, map: bool, _ method: string) throws -> Collection {
+func thisCollection(v: Value, map: bool, method: string) throws -> Collection {
     if case .object(let o) = v, let c = o as? Collection, c.IsMap == map { return c }
     let kind = map ? "Map" : "Set"
     throw object.ThrowTypeError("Method \(kind).prototype.\(method) called on incompatible receiver \(object.Describe(v))")
@@ -223,7 +223,7 @@ func thisCollection(_ v: Value, map: bool, _ method: string) throws -> Collectio
 
 /// fill is the constructors' AddEntriesFromIterable (§24.1.1.2) and the
 /// Set constructor's loop, calling the (possibly replaced) adder.
-func fill(_ target: object.JSObject, _ iterable: Value, adderName: string, pairs: bool) throws {
+func fill(target: object.JSObject, iterable: Value, adderName: string, pairs: bool) throws {
     if iterable.IsNullish { return }
     let adder = try target.Get(key(adderName), .object(target))
     if !adder.IsCallable { throw object.ThrowTypeError("'\(object.Describe(adder))' returned for property '\(adderName)' of object '\(object.Describe(.object(target)))' is not a function") }
@@ -261,7 +261,7 @@ public final class CollectionIterator: object.JSObject {
     public var Epoch: int
     public let Mode: IterationKind
 
-    public init(_ c: Collection, _ mode: IterationKind, proto: object.JSObject) {
+    public init(c: Collection, mode: IterationKind, proto: object.JSObject) {
         self.Target = c
         self.Mode = mode
         self.Epoch = c.Entries.Epoch
@@ -269,7 +269,7 @@ public final class CollectionIterator: object.JSObject {
     }
 }
 
-func iteratorPrototype(_ r: object.Realm, _ name: string, map: bool) -> object.JSObject {
+func iteratorPrototype(r: object.Realm, name: string, map: bool) -> object.JSObject {
     let p = object.JSObject(proto: r.IteratorPrototype)
     r.Method(p, "next", 0) { thisV, _, _ in
         guard case .object(let o) = thisV, let it = o as? CollectionIterator, it.Target?.IsMap ?? map == map else {
@@ -305,7 +305,7 @@ func iteratorPrototype(_ r: object.Realm, _ name: string, map: bool) -> object.J
 
 // MARK: Map (§24.1)
 
-func installMap(_ r: object.Realm) {
+func installMap(r: object.Realm) {
     let mp = r.MapPrototype
     let ctor = r.Constructor("Map", 0, prototype: mp) { _, args, nt in
         guard let n = nt else { throw object.ThrowTypeError("Constructor Map requires 'new'") }
@@ -385,7 +385,7 @@ func installMap(_ r: object.Realm) {
     mp.DefineData(.symbol(value.SymToStringTag), .string(str.Name("Map")), writable: false, enumerable: false, configurable: true)
 }
 
-func forEach(_ c: Collection, _ cb: Value, _ thisArg: Value) throws {
+func forEach(c: Collection, cb: Value, thisArg: Value) throws {
     let t = c.Entries
     var i = 0
     var epoch = t.Epoch
@@ -413,7 +413,7 @@ struct SetRecord {
     let keys: Value
 }
 
-func getSetRecord(_ v: Value) throws -> SetRecord {
+func getSetRecord(v: Value) throws -> SetRecord {
     guard case .object(let o) = v else { throw object.ThrowTypeError("\(object.Describe(v)) is not an object") }
     let rawSize = try o.Get(key("size"), v)
     let num = try object.ToNumber(rawSize)
@@ -427,19 +427,19 @@ func getSetRecord(_ v: Value) throws -> SetRecord {
     return SetRecord(set: o, size: size, has: has, keys: keys)
 }
 
-func keysIterator(_ rec: SetRecord) throws -> object.IteratorRecord {
+func keysIterator(rec: SetRecord) throws -> object.IteratorRecord {
     let it = try object.Call(rec.keys, .object(rec.set), [])
     guard case .object(let io) = it else { throw object.ThrowTypeError("keys() did not return an object") }
     return object.IteratorRecord(iterator: io, next: try io.Get(key("next"), it))
 }
 
-func liveKeys(_ c: Collection) -> [Value] {
+func liveKeys(c: Collection) -> [Value] {
     var out: [Value] = []
     for k in c.Entries.Keys where !k.IsEmpty { out.append(k) }
     return out
 }
 
-func installSet(_ r: object.Realm) {
+func installSet(r: object.Realm) {
     let sp = r.SetPrototype
     let ctor = r.Constructor("Set", 0, prototype: sp) { _, args, nt in
         guard let n = nt else { throw object.ThrowTypeError("Constructor Set requires 'new'") }
@@ -449,7 +449,7 @@ func installSet(_ r: object.Realm) {
         return .object(s)
     }
     r.Getter(ctor, .symbol(value.SymSpecies)) { thisV, _, _ in return thisV }
-    func newSet(_ keys: [Value]) -> Collection {
+    func newSet(keys: [Value]) -> Collection {
         let s = Collection(isMap: false, proto: r.SetPrototype)
         for k in keys { s.Entries.Set(k, k) }
         return s
@@ -588,13 +588,13 @@ func installSet(_ r: object.Realm) {
 
 // MARK: WeakMap and WeakSet (§24.3, §24.4)
 
-func thisWeak(_ v: Value, map: bool, _ method: string) throws -> WeakCollection {
+func thisWeak(v: Value, map: bool, method: string) throws -> WeakCollection {
     if case .object(let o) = v, let c = o as? WeakCollection, c.IsMap == map { return c }
     let kind = map ? "WeakMap" : "WeakSet"
     throw object.ThrowTypeError("Method \(kind).prototype.\(method) called on incompatible receiver \(object.Describe(v))")
 }
 
-func installWeak(_ r: object.Realm) {
+func installWeak(r: object.Realm) {
     let wmp = object.JSObject(proto: r.ObjectPrototype)
     let wsp = object.JSObject(proto: r.ObjectPrototype)
     _ = r.Constructor("WeakMap", 0, prototype: wmp) { _, args, nt in

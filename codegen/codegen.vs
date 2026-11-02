@@ -38,7 +38,7 @@ public enum CompileError: Error, CustomStringConvertible {
 }
 
 /// CompileScript compiles an analyzed script into its top-level function.
-public func CompileScript(_ prog: ast.Program, source: bytecode.SourceText) throws -> bytecode.FunctionTemplate {
+public func CompileScript(prog: ast.Program, source: bytecode.SourceText) throws -> bytecode.FunctionTemplate {
     let top = prog.Scope!
     let b = Builder(name: str.JSString.Empty, kind: .script, node: nil, scope: top, source: source, parent: nil)
     b.t.Strict = prog.Strict
@@ -48,7 +48,7 @@ public func CompileScript(_ prog: ast.Program, source: bytecode.SourceText) thro
 
 /// CompileEval compiles eval code. A sloppy eval's vars and functions are
 /// declared in the caller's var scope at runtime.
-public func CompileEval(_ prog: ast.Program, source: bytecode.SourceText) throws -> bytecode.FunctionTemplate {
+public func CompileEval(prog: ast.Program, source: bytecode.SourceText) throws -> bytecode.FunctionTemplate {
     let top = prog.Scope!
     let b = Builder(name: str.JSString.Empty, kind: .eval, node: nil, scope: top, source: source, parent: nil)
     b.t.Strict = top.Strict
@@ -57,7 +57,7 @@ public func CompileEval(_ prog: ast.Program, source: bytecode.SourceText) throws
 }
 
 /// Parse, analyze and compile a script in one step.
-public func Compile(_ prog: ast.Program, source: bytecode.SourceText) throws -> bytecode.FunctionTemplate {
+public func Compile(prog: ast.Program, source: bytecode.SourceText) throws -> bytecode.FunctionTemplate {
     _ = try scope.Analyze(prog)
     return try CompileScript(prog, source: source)
 }
@@ -174,13 +174,13 @@ final class Builder {
     // MARK: emission
 
     @discardableResult
-    func emit(_ op: bytecode.Opcode, _ a: int32 = 0, _ b: int32 = 0, _ c: int32 = 0) -> int {
+    func emit(op: bytecode.Opcode, a: int32 = 0, b: int32 = 0, c: int32 = 0) -> int {
         t.Code.append(bytecode.Instruction(op, a, b, c))
         return t.Code.count - 1
     }
 
     /// at records the source line of what is emitted next.
-    func at(_ pos: int) {
+    func at(pos: int) {
         if pos < 0 { return }
         let line = lineOf(pos)
         if line != lastLine {
@@ -190,7 +190,7 @@ final class Builder {
         }
     }
 
-    func lineOf(_ pos: int) -> int {
+    func lineOf(pos: int) -> int {
         // Build a table of line starts once.
         if lineStarts.isEmpty {
             lineStarts.append(0)
@@ -215,18 +215,18 @@ final class Builder {
         return labels.count - 1
     }
 
-    func bind(_ l: int) {
+    func bind(l: int) {
         labels[l] = t.Code.count
     }
 
     /// jump emits a jump (or a conditional one) to a label.
-    func jump(_ op: bytecode.Opcode, _ l: int) {
+    func jump(op: bytecode.Opcode, l: int) {
         let pc = emit(op, 0)
         patches.append((label: l, at: pc))
     }
 
     /// jumpB emits an instruction whose B operand is a label.
-    func jumpB(_ op: bytecode.Opcode, _ a: int32, _ l: int, _ c: int32 = 0) {
+    func jumpB(op: bytecode.Opcode, a: int32, l: int, c: int32 = 0) {
         let pc = emit(op, a, 0, c)
         patches.append((label: l, at: pc))
     }
@@ -241,7 +241,7 @@ final class Builder {
     }
 
     /// temps allocates n consecutive registers.
-    func temps(_ n: int) -> int32 {
+    func temps(n: int) -> int32 {
         let r = nextReg
         nextReg += int32(n)
         if nextReg > maxReg { maxReg = nextReg }
@@ -250,16 +250,16 @@ final class Builder {
 
     func mark() -> int32 { return nextReg }
 
-    func release(_ m: int32) { nextReg = m }
+    func release(m: int32) { nextReg = m }
 
     // MARK: constants
 
-    func constIndex(_ c: bytecode.Constant) -> int32 {
+    func constIndex(c: bytecode.Constant) -> int32 {
         t.Constants.append(c)
         return int32(t.Constants.count - 1)
     }
 
-    func keyConst(_ name: string) -> int32 {
+    func keyConst(name: string) -> int32 {
         if let i = keyConsts[name] { return i }
         let i = constIndex(.key(value.PropertyKey.Named(name)))
         keyConsts[name] = i
@@ -267,25 +267,25 @@ final class Builder {
     }
 
     /// nameConst is a string constant for a name (globals, errors).
-    func strConst(_ s: string) -> int32 {
+    func strConst(s: string) -> int32 {
         if let i = strConsts[s] { return i }
         let i = constIndex(.string(str.Name(s)))
         strConsts[s] = i
         return i
     }
 
-    func jsStrConst(_ u: [uint16]) -> int32 {
+    func jsStrConst(u: [uint16]) -> int32 {
         return constIndex(.string(str.JSString(u)))
     }
 
-    func numConst(_ d: float64) -> int32 {
+    func numConst(d: float64) -> int32 {
         if let i = numConsts[d.bitPattern] { return i }
         let i = constIndex(.number(d))
         numConsts[d.bitPattern] = i
         return i
     }
 
-    func loadNumber(_ d: float64) {
+    func loadNumber(d: float64) {
         if d == d.rounded(.towardZero) && d >= -1073741824 && d <= 1073741823 && !(d == 0 && d.sign == .minus) {
             emit(.ldaSmi, int32(d))
         } else {
@@ -293,14 +293,14 @@ final class Builder {
         }
     }
 
-    func throwError(_ msg: string, _ kind: int32) {
+    func throwError(msg: string, kind: int32) {
         emit(.throwError, strConst(msg), kind)
     }
 
     // MARK: scopes
 
     /// contextHops counts the contexts between the current scope and b's.
-    func contextHops(_ b: ast.Binding) -> int32 {
+    func contextHops(b: ast.Binding) -> int32 {
         var hops: int32 = 0
         var s: ast.Scope? = scope
         let target = b.Scope
@@ -313,7 +313,7 @@ final class Builder {
     }
 
     /// scopeInfo registers a scope's names, for runtime lookup by name.
-    func scopeInfo(_ s: ast.Scope) -> int32 {
+    func scopeInfo(s: ast.Scope) -> int32 {
         let info = bytecode.ScopeInfo()
         info.Names = [str.JSString](repeating: str.JSString.Empty, count: s.ContextSlots)
         info.Const = [bool](repeating: false, count: s.ContextSlots)
@@ -332,7 +332,7 @@ final class Builder {
 
     /// enterScope makes s current, pushing its context if it has one, and
     /// puts its lexical bindings in their temporal dead zone.
-    func enterScope(_ s: ast.Scope) {
+    func enterScope(s: ast.Scope) {
         scope = s
         if s.NeedsContext {
             let info = scopeInfo(s)
@@ -350,7 +350,7 @@ final class Builder {
         }
     }
 
-    func exitScope(_ s: ast.Scope) {
+    func exitScope(s: ast.Scope) {
         if s.NeedsContext {
             emit(.popContext)
             contextDepth -= 1
@@ -362,7 +362,7 @@ final class Builder {
     // MARK: bindings
 
     /// loadBinding loads an identifier's value.
-    func loadIdentifier(_ id: ast.Identifier, typeofOperand: bool = false) {
+    func loadIdentifier(id: ast.Identifier, typeofOperand: bool = false) {
         if id.Name == "undefined" && id.Binding == nil && !id.Dynamic {
             emit(.ldaUndefined)
             return
@@ -378,7 +378,7 @@ final class Builder {
         loadBinding(b, name: id.Name)
     }
 
-    func loadBinding(_ b: ast.Binding, name: string) {
+    func loadBinding(b: ast.Binding, name: string) {
         if b.Captured {
             let hops = contextHops(b)
             if b.IsLexical {
@@ -396,7 +396,7 @@ final class Builder {
 
     /// storeBinding stores the accumulator into a binding. init is set for
     /// a declaration's initialization (no TDZ or const check).
-    func storeBinding(_ b: ast.Binding, name: string, initialize: bool) {
+    func storeBinding(b: ast.Binding, name: string, initialize: bool) {
         if !initialize {
             if b.Kind == .calleeName {
                 // Assigning a named function expression's own name: ignored
@@ -430,7 +430,7 @@ final class Builder {
     }
 
     /// storeIdentifier stores the accumulator to a name.
-    func storeIdentifier(_ id: ast.Identifier, initialize: bool) {
+    func storeIdentifier(id: ast.Identifier, initialize: bool) {
         if id.Dynamic {
             emit(.staLookup, strConst(id.Name), t.Strict ? 1 : 0)
             return
@@ -449,7 +449,7 @@ final class Builder {
     /// topLexicals are the script's let, const and class names.
     var topLexicals: [string] = []
 
-    func isTopLexical(_ name: string) -> bool {
+    func isTopLexical(name: string) -> bool {
         var b: Builder? = self
         while let cur = b {
             if cur.topLexicals.contains(name) { return true }
@@ -460,7 +460,7 @@ final class Builder {
 
     // MARK: programs
 
-    func compileProgram(_ prog: ast.Program) throws {
+    func compileProgram(prog: ast.Program) throws {
         let s = prog.Scope!
         topLexicals = prog.LexNames
         completion = temp()
@@ -511,7 +511,7 @@ final class Builder {
 
     /// hoistFunctions instantiates a scope's function declarations at its
     /// start (the declarations themselves then do nothing).
-    func hoistFunctions(_ body: [ast.Stmt], _ s: ast.Scope, skipTop: bool) throws {
+    func hoistFunctions(body: [ast.Stmt], s: ast.Scope, skipTop: bool) throws {
         if skipTop { return }
         for st in body {
             var fn: ast.FunctionNode? = nil
@@ -527,7 +527,7 @@ final class Builder {
 
     /// annexBStore copies a block function's value to the function's var of
     /// the same name when its declaration is evaluated (Annex B.3.3).
-    func annexBStore(_ f: ast.FunctionNode) {
+    func annexBStore(f: ast.FunctionNode) {
         guard let blockBinding = scope.Bindings[f.Name] else { return }
         loadBinding(blockBinding, name: f.Name)
         var s: ast.Scope? = scope.Parent
@@ -549,12 +549,12 @@ final class Builder {
 
     /// compileClosure compiles a function node and leaves a closure of it in
     /// the accumulator.
-    func compileClosure(_ f: ast.FunctionNode, nameHint: string?) throws {
+    func compileClosure(f: ast.FunctionNode, nameHint: string?) throws {
         let tmpl = try compileFunction(f, nameHint: nameHint)
         emit(.createClosure, constIndex(.function(tmpl)))
     }
 
-    func compileFunction(_ f: ast.FunctionNode, nameHint: string?) throws -> bytecode.FunctionTemplate {
+    func compileFunction(f: ast.FunctionNode, nameHint: string?) throws -> bytecode.FunctionTemplate {
         var name = f.Name
         if name.isEmpty, let h = nameHint { name = h }
         var kind = bytecode.FunctionKind.normal
@@ -592,7 +592,7 @@ final class Builder {
 
     /// compileBody emits the prologue (arguments, parameters, hoisted
     /// declarations) and the body.
-    func compileBody(_ f: ast.FunctionNode) throws {
+    func compileBody(f: ast.FunctionNode) throws {
         let s = f.Scope!
         at(f.Start)
         if !f.SimpleParams {
@@ -690,7 +690,7 @@ final class Builder {
         emit(.returnOp)
     }
 
-    func patternName(_ p: ast.Pattern) -> string? {
+    func patternName(p: ast.Pattern) -> string? {
         if case .identifier(let id) = p { return id.Name }
         return nil
     }

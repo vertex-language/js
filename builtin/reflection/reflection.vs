@@ -10,9 +10,9 @@ import (
 
 typealias Value = object.Value
 
-func key(_ s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
+func key(s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
 
-func target(_ v: Value, _ method: string) throws -> object.JSObject {
+func target(v: Value, method: string) throws -> object.JSObject {
     guard case .object(let o) = v else {
         throw object.ThrowTypeError("Reflect.\(method) called on non-object")
     }
@@ -20,12 +20,12 @@ func target(_ v: Value, _ method: string) throws -> object.JSObject {
 }
 
 /// Install defines Reflect and Proxy.
-public func Install(_ r: object.Realm) {
+public func Install(r: object.Realm) {
     installReflect(r)
     installProxy(r)
 }
 
-func installReflect(_ r: object.Realm) {
+func installReflect(r: object.Realm) {
     let rf = object.JSObject(proto: r.ObjectPrototype)
     r.DefineGlobal("Reflect", .object(rf))
     rf.DefineData(.symbol(value.SymToStringTag), .string(str.Name("Reflect")), writable: false, enumerable: false, configurable: true)
@@ -105,8 +105,8 @@ func installReflect(_ r: object.Realm) {
     }
 }
 
-func installProxy(_ r: object.Realm) {
-    func create(_ t: Value, _ h: Value) throws -> object.ProxyObject {
+func installProxy(r: object.Realm) {
+    func create(t: Value, h: Value) throws -> object.ProxyObject {
         guard case .object(let to) = t, case .object(let ho) = h else {
             throw object.ThrowTypeError("Cannot create proxy with a non-object as target or handler")
         }

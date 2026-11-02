@@ -25,14 +25,14 @@ public final class ProxyObject: JSObject {
     public override var IsCallable: bool { return callable }
     public override var IsConstructor: bool { return constructible }
 
-    func parts(_ op: string) throws -> (JSObject, JSObject) {
+    func parts(op: string) throws -> (JSObject, JSObject) {
         guard let t = Target, let h = Handler else {
             throw ThrowTypeError("Cannot perform '\(op)' on a proxy that has been revoked")
         }
         return (t, h)
     }
 
-    func trap(_ h: JSObject, _ name: string) throws -> JSObject? {
+    func trap(h: JSObject, name: string) throws -> JSObject? {
         let f = try GetMethod(.object(h), Key(name))
         if case .object(let o) = f { return o }
         return nil
@@ -55,7 +55,7 @@ public final class ProxyObject: JSObject {
         return proto
     }
 
-    public override func SetPrototypeOf(_ v: JSObject?) throws -> bool {
+    public override func SetPrototypeOf(v: JSObject?) throws -> bool {
         let (t, h) = try parts("setPrototypeOf")
         guard let tr = try trap(h, "setPrototypeOf") else { return try t.SetPrototypeOf(v) }
         let arg: Value = v == nil ? .null : .object(v!)
@@ -87,7 +87,7 @@ public final class ProxyObject: JSObject {
         return r
     }
 
-    public override func GetOwnProperty(_ key: value.PropertyKey) throws -> PropertyDescriptor? {
+    public override func GetOwnProperty(key: value.PropertyKey) throws -> PropertyDescriptor? {
         let (t, h) = try parts("getOwnPropertyDescriptor")
         guard let tr = try trap(h, "getOwnPropertyDescriptor") else { return try t.GetOwnProperty(key) }
         let r = try tr.Call(.object(h), [.object(t), KeyToValue(key)])
@@ -118,7 +118,7 @@ public final class ProxyObject: JSObject {
         return result
     }
 
-    func isCompatible(_ extensible: bool, _ desc: PropertyDescriptor, _ current: PropertyDescriptor?) -> bool {
+    func isCompatible(extensible: bool, desc: PropertyDescriptor, current: PropertyDescriptor?) -> bool {
         guard let cur = current else { return extensible }
         if cur.Configurable == false {
             if desc.Configurable == true { return false }
@@ -135,7 +135,7 @@ public final class ProxyObject: JSObject {
         return true
     }
 
-    public override func DefineOwnProperty(_ key: value.PropertyKey, _ desc: PropertyDescriptor) throws -> bool {
+    public override func DefineOwnProperty(key: value.PropertyKey, desc: PropertyDescriptor) throws -> bool {
         let (t, h) = try parts("defineProperty")
         guard let tr = try trap(h, "defineProperty") else { return try t.DefineOwnProperty(key, desc) }
         let descObj = FromPropertyDescriptor(desc)
@@ -157,7 +157,7 @@ public final class ProxyObject: JSObject {
         return true
     }
 
-    public override func HasProperty(_ key: value.PropertyKey) throws -> bool {
+    public override func HasProperty(key: value.PropertyKey) throws -> bool {
         let (t, h) = try parts("has")
         guard let tr = try trap(h, "has") else { return try t.HasProperty(key) }
         let r = try tr.Call(.object(h), [.object(t), KeyToValue(key)]).Truthy
@@ -174,7 +174,7 @@ public final class ProxyObject: JSObject {
         return r
     }
 
-    public override func Get(_ key: value.PropertyKey, _ receiver: Value) throws -> Value {
+    public override func Get(key: value.PropertyKey, receiver: Value) throws -> Value {
         let (t, h) = try parts("get")
         guard let tr = try trap(h, "get") else { return try t.Get(key, receiver) }
         let v = try tr.Call(.object(h), [.object(t), KeyToValue(key), receiver])
@@ -189,7 +189,7 @@ public final class ProxyObject: JSObject {
         return v
     }
 
-    public override func Set(_ key: value.PropertyKey, _ v: Value, _ receiver: Value) throws -> bool {
+    public override func Set(key: value.PropertyKey, v: Value, receiver: Value) throws -> bool {
         let (t, h) = try parts("set")
         guard let tr = try trap(h, "set") else { return try t.Set(key, v, receiver) }
         if !(try tr.Call(.object(h), [.object(t), KeyToValue(key), v, receiver]).Truthy) { return false }
@@ -204,7 +204,7 @@ public final class ProxyObject: JSObject {
         return true
     }
 
-    public override func Delete(_ key: value.PropertyKey) throws -> bool {
+    public override func Delete(key: value.PropertyKey) throws -> bool {
         let (t, h) = try parts("deleteProperty")
         guard let tr = try trap(h, "deleteProperty") else { return try t.Delete(key) }
         if !(try tr.Call(.object(h), [.object(t), KeyToValue(key)]).Truthy) { return false }
@@ -274,14 +274,14 @@ public final class ProxyObject: JSObject {
         return keys
     }
 
-    public override func Call(_ this: Value, _ args: [Value]) throws -> Value {
+    public override func Call(this: Value, args: [Value]) throws -> Value {
         let (t, h) = try parts("apply")
         guard let tr = try trap(h, "apply") else { return try t.Call(this, args) }
         let arr = CreateArrayFromList(CurrentRealm(), args)
         return try tr.Call(.object(h), [.object(t), this, .object(arr)])
     }
 
-    public override func Construct(_ args: [Value], _ newTarget: JSObject) throws -> Value {
+    public override func Construct(args: [Value], newTarget: JSObject) throws -> Value {
         let (t, h) = try parts("construct")
         guard let tr = try trap(h, "construct") else { return try t.Construct(args, newTarget) }
         let arr = CreateArrayFromList(CurrentRealm(), args)

@@ -12,11 +12,11 @@ import (
 public final class Completion: Error {
     public let Value: Value
 
-    public init(_ v: Value) {
+    public init(v: Value) {
         self.Value = v
     }
 
-    public static func thrown(_ v: Value) -> Completion {
+    public static func thrown(v: Value) -> Completion {
         return Completion(v)
     }
 }
@@ -41,7 +41,7 @@ public struct PropertyDescriptor {
     }
 
     /// Data makes a complete data descriptor.
-    public static func Data(_ v: Value, writable: bool = true, enumerable: bool = true, configurable: bool = true) -> PropertyDescriptor {
+    public static func Data(v: Value, writable: bool = true, enumerable: bool = true, configurable: bool = true) -> PropertyDescriptor {
         var d = PropertyDescriptor()
         d.Value = v
         d.Writable = writable
@@ -175,7 +175,7 @@ open class JSObject {
     // MARK: storage
 
     /// find is the slot number of an own stored key, or -1.
-    public func find(_ key: value.PropertyKey) -> int {
+    public func find(key: value.PropertyKey) -> int {
         if indexed {
             return index[key] ?? -1
         }
@@ -208,13 +208,13 @@ open class JSObject {
     }
 
     /// OwnSlot is the stored property for a key, if any.
-    public func OwnSlot(_ key: value.PropertyKey) -> Slot? {
+    public func OwnSlot(key: value.PropertyKey) -> Slot? {
         let i = find(key)
         return i < 0 ? nil : slots[i]
     }
 
     /// store adds or replaces a stored property.
-    public func store(_ key: value.PropertyKey, _ slot: Slot) {
+    public func store(key: value.PropertyKey, slot: Slot) {
         let i = find(key)
         if i >= 0 {
             slots[i] = slot
@@ -241,7 +241,7 @@ open class JSObject {
     }
 
     /// remove deletes a stored property.
-    public func remove(_ key: value.PropertyKey) {
+    public func remove(key: value.PropertyKey) {
         let i = find(key)
         if i < 0 { return }
         slots[i] = Slot(value: .undefined, flags: fDeleted)
@@ -278,7 +278,7 @@ open class JSObject {
 
     /// DefineData adds a data property directly, for building built-ins
     /// and fresh objects: no checks.
-    public func DefineData(_ key: value.PropertyKey, _ v: Value, writable: bool = true, enumerable: bool = true, configurable: bool = true) {
+    public func DefineData(key: value.PropertyKey, v: Value, writable: bool = true, enumerable: bool = true, configurable: bool = true) {
         var f: uint8 = 0
         if writable { f |= fWritable }
         if enumerable { f |= fEnumerable }
@@ -287,7 +287,7 @@ open class JSObject {
     }
 
     /// DefineAccessor adds an accessor property directly.
-    public func DefineAccessorDirect(_ key: value.PropertyKey, getter: JSObject?, setter: JSObject?, enumerable: bool = false, configurable: bool = true) {
+    public func DefineAccessorDirect(key: value.PropertyKey, getter: JSObject?, setter: JSObject?, enumerable: bool = false, configurable: bool = true) {
         var f: uint8 = fAccessor
         if enumerable { f |= fEnumerable }
         if configurable { f |= fConfigurable }
@@ -320,11 +320,11 @@ open class JSObject {
         return Proto
     }
 
-    open func SetPrototypeOf(_ v: JSObject?) throws -> bool {
+    open func SetPrototypeOf(v: JSObject?) throws -> bool {
         return OrdinarySetPrototypeOf(v)
     }
 
-    public func OrdinarySetPrototypeOf(_ v: JSObject?) -> bool {
+    public func OrdinarySetPrototypeOf(v: JSObject?) -> bool {
         if v === Proto { return true }
         if !Extensible { return false }
         var p = v
@@ -346,17 +346,17 @@ open class JSObject {
         return true
     }
 
-    open func GetOwnProperty(_ key: value.PropertyKey) throws -> PropertyDescriptor? {
+    open func GetOwnProperty(key: value.PropertyKey) throws -> PropertyDescriptor? {
         let i = find(key)
         if i < 0 { return nil }
         return slots[i].Descriptor
     }
 
-    open func DefineOwnProperty(_ key: value.PropertyKey, _ desc: PropertyDescriptor) throws -> bool {
+    open func DefineOwnProperty(key: value.PropertyKey, desc: PropertyDescriptor) throws -> bool {
         return try OrdinaryDefineOwnProperty(key, desc)
     }
 
-    public func OrdinaryDefineOwnProperty(_ key: value.PropertyKey, _ desc: PropertyDescriptor) throws -> bool {
+    public func OrdinaryDefineOwnProperty(key: value.PropertyKey, desc: PropertyDescriptor) throws -> bool {
         let current = try GetOwnProperty(key)
         let ext = try IsExtensibleObject()
         return ValidateAndApply(key, ext, desc, current)
@@ -364,7 +364,7 @@ open class JSObject {
 
     /// ValidateAndApply is ValidateAndApplyPropertyDescriptor (§10.1.6.3)
     /// for this object's own storage.
-    public func ValidateAndApply(_ key: value.PropertyKey, _ extensible: bool, _ desc: PropertyDescriptor, _ current: PropertyDescriptor?) -> bool {
+    public func ValidateAndApply(key: value.PropertyKey, extensible: bool, desc: PropertyDescriptor, current: PropertyDescriptor?) -> bool {
         guard let cur = current else {
             if !extensible { return false }
             if desc.IsAccessor {
@@ -436,7 +436,7 @@ open class JSObject {
         return true
     }
 
-    open func HasProperty(_ key: value.PropertyKey) throws -> bool {
+    open func HasProperty(key: value.PropertyKey) throws -> bool {
         var o: JSObject = self
         while true {
             if o.isOrdinaryLookup {
@@ -449,7 +449,7 @@ open class JSObject {
         }
     }
 
-    public func HasPropertySlow(_ key: value.PropertyKey) throws -> bool {
+    public func HasPropertySlow(key: value.PropertyKey) throws -> bool {
         if try GetOwnProperty(key) != nil { return true }
         guard let p = try GetPrototypeOf() else { return false }
         return try p.HasProperty(key)
@@ -459,7 +459,7 @@ open class JSObject {
     /// so lookups can read storage directly.
     open var isOrdinaryLookup: bool { return true }
 
-    open func Get(_ key: value.PropertyKey, _ receiver: Value) throws -> Value {
+    open func Get(key: value.PropertyKey, receiver: Value) throws -> Value {
         var o: JSObject = self
         while true {
             if o.isOrdinaryLookup {
@@ -479,7 +479,7 @@ open class JSObject {
         }
     }
 
-    public func GetSlow(_ key: value.PropertyKey, _ receiver: Value) throws -> Value {
+    public func GetSlow(key: value.PropertyKey, receiver: Value) throws -> Value {
         guard let desc = try GetOwnProperty(key) else {
             guard let p = try GetPrototypeOf() else { return .undefined }
             return try p.Get(key, receiver)
@@ -489,7 +489,7 @@ open class JSObject {
         return try go.Call(receiver, [])
     }
 
-    open func Set(_ key: value.PropertyKey, _ v: Value, _ receiver: Value) throws -> bool {
+    open func Set(key: value.PropertyKey, v: Value, receiver: Value) throws -> bool {
         // Fast path: an own writable data property on the receiver itself.
         if isOrdinaryLookup, case .object(let r) = receiver, r === self {
             let i = find(key)
@@ -502,7 +502,7 @@ open class JSObject {
     }
 
     /// OrdinarySet is OrdinarySetWithOwnDescriptor (§10.1.9.2).
-    public func OrdinarySet(_ key: value.PropertyKey, _ v: Value, _ receiver: Value) throws -> bool {
+    public func OrdinarySet(key: value.PropertyKey, v: Value, receiver: Value) throws -> bool {
         var ownDesc = try GetOwnProperty(key)
         if ownDesc == nil {
             if let parent = try GetPrototypeOf() {
@@ -528,7 +528,7 @@ open class JSObject {
         return true
     }
 
-    open func Delete(_ key: value.PropertyKey) throws -> bool {
+    open func Delete(key: value.PropertyKey) throws -> bool {
         let i = find(key)
         if i < 0 { return true }
         if slots[i].Flags & fConfigurable == 0 { return false }
@@ -573,33 +573,33 @@ open class JSObject {
     open var IsConstructor: bool { return false }
 
     /// Call is [[Call]]; only callable objects have it.
-    open func Call(_ this: Value, _ args: [Value]) throws -> Value {
+    open func Call(this: Value, args: [Value]) throws -> Value {
         throw ThrowTypeError("object is not a function")
     }
 
     /// Construct is [[Construct]]; only constructors have it.
-    open func Construct(_ args: [Value], _ newTarget: JSObject) throws -> Value {
+    open func Construct(args: [Value], newTarget: JSObject) throws -> Value {
         throw ThrowTypeError("object is not a constructor")
     }
 
     // MARK: private elements (§7.3.26–§7.3.32)
 
-    public func PrivateFind(_ name: value.Symbol) -> int {
+    public func PrivateFind(name: value.Symbol) -> int {
         return find(.symbol(name))
     }
 }
 
 /// OrdinaryObject is a plain object with a given prototype.
-public func NewObject(_ proto: JSObject?) -> JSObject {
+public func NewObject(proto: JSObject?) -> JSObject {
     return JSObject(proto: proto)
 }
 
 /// Key helpers.
-public func Key(_ s: string) -> value.PropertyKey {
+public func Key(s: string) -> value.PropertyKey {
     return value.PropertyKey.Named(s)
 }
 
-public func SymKey(_ s: value.Symbol) -> value.PropertyKey {
+public func SymKey(s: value.Symbol) -> value.PropertyKey {
     return .symbol(s)
 }
 

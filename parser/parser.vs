@@ -56,14 +56,14 @@ public struct Options {
 }
 
 /// ParseScript parses a script.
-public func ParseScript(_ source: string, filename: string = "") throws -> ast.Program {
+public func ParseScript(source: string, filename: string = "") throws -> ast.Program {
     var o = Options()
     o.Module = false
     return try Parse(source, filename: filename, options: o)
 }
 
 /// ParseModule parses a module: strict, with import and export.
-public func ParseModule(_ source: string, filename: string = "") throws -> ast.Program {
+public func ParseModule(source: string, filename: string = "") throws -> ast.Program {
     var o = Options()
     o.Module = true
     o.Strict = true
@@ -71,7 +71,7 @@ public func ParseModule(_ source: string, filename: string = "") throws -> ast.P
 }
 
 /// Parse parses a program with options.
-public func Parse(_ source: string, filename: string, options: Options) throws -> ast.Program {
+public func Parse(source: string, filename: string, options: Options) throws -> ast.Program {
     let p = Parser(source, options: options)
     return try p.ParseProgram(filename: filename)
 }
@@ -138,7 +138,7 @@ final class Parser {
     /// arrow parameters that contain one can be rejected.
     var privateNames: [[string]] = []
 
-    init(_ source: string, options: Options) {
+    init(source: string, options: Options) {
         self.sc = scanner.Scanner(source)
         self.options = options
         self.strict = options.Strict
@@ -167,14 +167,14 @@ final class Parser {
         }
     }
 
-    func scanError(_ e: scanner.ScanError) -> ParseError {
+    func scanError(e: scanner.ScanError) -> ParseError {
         switch e {
         case .error(let msg, let pos):
             return ParseError.syntax(message: msg, pos: pos, line: lineOf(pos))
         }
     }
 
-    func lineOf(_ pos: int) -> int {
+    func lineOf(pos: int) -> int {
         let b = sc.Bytes
         var line = 1
         var i = 0
@@ -201,9 +201,9 @@ final class Parser {
         return t
     }
 
-    func at(_ k: token.TokenKind) -> bool { return tok.Kind == k }
+    func at(k: token.TokenKind) -> bool { return tok.Kind == k }
 
-    func eat(_ k: token.TokenKind) throws -> bool {
+    func eat(k: token.TokenKind) throws -> bool {
         if tok.Kind == k {
             try next()
             return true
@@ -211,18 +211,18 @@ final class Parser {
         return false
     }
 
-    func expect(_ k: token.TokenKind) throws {
+    func expect(k: token.TokenKind) throws {
         if tok.Kind != k {
             throw unexpected()
         }
         try next()
     }
 
-    func errorAt(_ msg: string, _ t: token.Token) -> ParseError {
+    func errorAt(msg: string, t: token.Token) -> ParseError {
         return ParseError.syntax(message: msg, pos: t.Pos, line: t.Line)
     }
 
-    func error(_ msg: string, _ pos: int) -> ParseError {
+    func error(msg: string, pos: int) -> ParseError {
         return ParseError.syntax(message: msg, pos: pos, line: lineOf(pos))
     }
 
@@ -261,7 +261,7 @@ final class Parser {
         throw unexpected()
     }
 
-    func isReservedWord(_ k: token.TokenKind) -> bool {
+    func isReservedWord(k: token.TokenKind) -> bool {
         switch k {
         case .kBreak, .kCase, .kCatch, .kClass, .kConst, .kContinue, .kDebugger, .kDefault,
              .kDelete, .kDo, .kElse, .kExport, .kExtends, .kFinally, .kFor, .kFunction, .kIf,
@@ -273,7 +273,7 @@ final class Parser {
         }
     }
 
-    func isStrictReserved(_ name: string) -> bool {
+    func isStrictReserved(name: string) -> bool {
         switch name {
         case "implements", "interface", "let", "package", "private", "protected", "public", "static", "yield":
             return true
@@ -284,7 +284,7 @@ final class Parser {
 
     /// isIdentifier says whether the current token can be an identifier
     /// reference or binding here.
-    func isIdentifier(_ t: token.Token) -> bool {
+    func isIdentifier(t: token.Token) -> bool {
         switch t.Kind {
         case .identifier:
             if strict && isStrictReserved(t.Text) { return false }
@@ -350,7 +350,7 @@ final class Parser {
     }
 
     /// parseDirectives reads a directive prologue ("use strict") into body.
-    func parseDirectives(_ body: inout [ast.Stmt]) throws {
+    func parseDirectives(body: inout [ast.Stmt]) throws {
         var sawOctal = -1
         while tok.Kind == .string {
             let t = tok
@@ -676,7 +676,7 @@ final class Parser {
         return decls
     }
 
-    func isIdentPattern(_ p: ast.Pattern) -> bool {
+    func isIdentPattern(p: ast.Pattern) -> bool {
         if case .identifier = p { return true }
         return false
     }
@@ -1047,7 +1047,7 @@ final class Parser {
         }
     }
 
-    func expectContextual(_ word: string) throws {
+    func expectContextual(word: string) throws {
         if tok.Text == word && !tok.Escaped && (tok.Kind == .identifier || tok.Kind == .kAs || tok.Kind == .kFrom || tok.Kind == .kOf) {
             try next()
             return
@@ -1173,7 +1173,7 @@ final class Parser {
                                inClassFieldInit: inClassFieldInit, inStaticBlock: inStaticBlock)
     }
 
-    func restoreContext(_ c: FunctionContext) {
+    func restoreContext(c: FunctionContext) {
         inFunction = c.inFunction
         inAsync = c.inAsync
         inGenerator = c.inGenerator
@@ -1280,7 +1280,7 @@ final class Parser {
         return f
     }
 
-    func parseFunctionBody(_ f: ast.FunctionNode) throws {
+    func parseFunctionBody(f: ast.FunctionNode) throws {
         try expect(.lBrace)
         var body: [ast.Stmt] = []
         let wasStrict = strict
@@ -1303,7 +1303,7 @@ final class Parser {
     }
 
     /// checkStrictParams applies strict mode's rules to parameter names.
-    func checkStrictParams(_ f: ast.FunctionNode) throws {
+    func checkStrictParams(f: ast.FunctionNode) throws {
         var names: [string] = []
         for p in f.Params { ast.PatternNames(p.Target, &names) }
         if let r = f.Rest { ast.PatternNames(r, &names) }
@@ -1326,7 +1326,7 @@ final class Parser {
     }
 
     /// checkParamsUnique rejects duplicate names where they are never allowed.
-    func checkParamsUnique(_ f: ast.FunctionNode) throws {
+    func checkParamsUnique(f: ast.FunctionNode) throws {
         var names: [string] = []
         for p in f.Params { ast.PatternNames(p.Target, &names) }
         if let r = f.Rest { ast.PatternNames(r, &names) }
@@ -1427,7 +1427,7 @@ final class Parser {
         return names
     }
 
-    func parseClassElement(_ cls: ast.ClassNode, derived: bool) throws -> ast.ClassElement? {
+    func parseClassElement(cls: ast.ClassNode, derived: bool) throws -> ast.ClassElement? {
         let start = tok.Pos
         var isStatic = false
         var isAsync = false
@@ -1531,11 +1531,11 @@ final class Parser {
         return ast.ClassElement(kind: .field, key: key, isStatic: isStatic, value: initFn, at: start)
     }
 
-    func isFieldEnd(_ t: token.Token) -> bool {
+    func isFieldEnd(t: token.Token) -> bool {
         return true
     }
 
-    func keyName(_ k: ast.PropertyKey) -> string {
+    func keyName(k: ast.PropertyKey) -> string {
         switch k {
         case .named(let n): return n
         case .privateName(let n): return "#" + n
@@ -1600,7 +1600,7 @@ final class Parser {
         return try parseExpression()
     }
 
-    func isAssignOp(_ k: token.TokenKind) -> bool {
+    func isAssignOp(k: token.TokenKind) -> bool {
         switch k {
         case .assign, .addAssign, .subAssign, .mulAssign, .divAssign, .modAssign, .expAssign,
              .shlAssign, .shrAssign, .ushrAssign, .andAssign, .orAssign, .xorAssign,
@@ -1752,7 +1752,7 @@ final class Parser {
         return .conditional(ast.ConditionalExpr(test: test, consequent: cons, alternate: alt, at: start))
     }
 
-    func binaryPrec(_ k: token.TokenKind) -> int {
+    func binaryPrec(k: token.TokenKind) -> int {
         switch k {
         case .nullishCoalesce: return 1
         case .logicalOr: return 2
@@ -2088,7 +2088,7 @@ final class Parser {
         throw unexpected()
     }
 
-    func checkPrivateName(_ name: string, _ t: token.Token) throws {
+    func checkPrivateName(name: string, t: token.Token) throws {
         for names in privateNames.reversed() {
             if names.contains(name) { return }
         }
@@ -2492,7 +2492,7 @@ final class Parser {
     // MARK: cover grammar conversions
 
     /// toParam turns an arrow's parenthesized expression into a parameter.
-    func toParam(_ e: ast.Expr) throws -> ast.Param {
+    func toParam(e: ast.Expr) throws -> ast.Param {
         if case .assign(let a) = e, a.Op == .assign {
             let target = try patternToBinding(a.Target)
             if case .yieldExpr = a.Value { throw error("Yield expression not allowed in formal parameter", ast.ExprPos(a.Value)) }
@@ -2509,12 +2509,12 @@ final class Parser {
 
     /// toBindingPattern turns an expression into a binding pattern: only
     /// identifiers can be bound, not member expressions.
-    func toBindingPattern(_ e: ast.Expr) throws -> ast.Pattern {
+    func toBindingPattern(e: ast.Expr) throws -> ast.Pattern {
         let p = try toAssignTarget(e, message: "Invalid destructuring assignment target")
         return try patternToBinding(p)
     }
 
-    func patternToBinding(_ p: ast.Pattern) throws -> ast.Pattern {
+    func patternToBinding(p: ast.Pattern) throws -> ast.Pattern {
         switch p {
         case .identifier(let id):
             if strict && (id.Name == "eval" || id.Name == "arguments") {
@@ -2538,7 +2538,7 @@ final class Parser {
 
     /// toSimpleTarget checks an update or compound assignment's target: an
     /// identifier or a member access.
-    func toSimpleTarget(_ e: ast.Expr, message: string) throws -> ast.Pattern {
+    func toSimpleTarget(e: ast.Expr, message: string) throws -> ast.Pattern {
         switch ast.StripParens(e) {
         case .identifier(let id):
             if strict && (id.Name == "eval" || id.Name == "arguments") {
@@ -2560,7 +2560,7 @@ final class Parser {
 
     /// toAssignTarget turns an expression into an assignment target,
     /// converting array and object literals into patterns.
-    func toAssignTarget(_ e: ast.Expr, message: string) throws -> ast.Pattern {
+    func toAssignTarget(e: ast.Expr, message: string) throws -> ast.Pattern {
         switch e {
         case .identifier, .member, .superMember:
             return try toSimpleTarget(e, message: message)
@@ -2623,7 +2623,7 @@ final class Parser {
         }
     }
 
-    func toPatternElement(_ e: ast.Expr) throws -> ast.PatternElement {
+    func toPatternElement(e: ast.Expr) throws -> ast.PatternElement {
         if case .assign(let a) = e, a.Op == .assign {
             // The target was converted when the = was parsed.
             return ast.PatternElement(target: a.Target, def: a.Value)

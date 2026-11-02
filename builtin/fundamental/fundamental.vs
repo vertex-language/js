@@ -10,10 +10,10 @@ import (
 
 typealias Value = object.Value
 
-func key(_ s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
+func key(s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
 
 /// Install defines the fundamental objects in a realm.
-public func Install(_ r: object.Realm) {
+public func Install(r: object.Realm) {
     installObject(r)
     installFunction(r)
     installBoolean(r)
@@ -24,7 +24,7 @@ public func Install(_ r: object.Realm) {
 
 // MARK: Object (§20.1)
 
-func installObject(_ r: object.Realm) {
+func installObject(r: object.Realm) {
     let op = r.ObjectPrototype
     let ctor = r.Constructor("Object", 1, prototype: op) { _, args, nt in
         if let n = nt, n !== r.ObjectConstructor! {
@@ -294,7 +294,7 @@ func installObject(_ r: object.Realm) {
     }
 }
 
-func defineProperties(_ o: object.JSObject, _ props: Value) throws {
+func defineProperties(o: object.JSObject, props: Value) throws {
     let p = try object.ToObject(props)
     var descs: [(value.PropertyKey, object.PropertyDescriptor)] = []
     for k in try p.OwnPropertyKeys() {
@@ -308,7 +308,7 @@ func defineProperties(_ o: object.JSObject, _ props: Value) throws {
 }
 
 /// groupBy is GroupBy (§7.3.35): the groups in first-seen order.
-public func groupBy(_ items: Value, _ cb: Value, propertyKeys: bool) throws -> [(Value, [Value])] {
+public func groupBy(items: Value, cb: Value, propertyKeys: bool) throws -> [(Value, [Value])] {
     try object.RequireObjectCoercible(items)
     guard cb.IsCallable else { throw object.ThrowTypeError("\(object.Describe(cb)) is not a function") }
     var groups: [(Value, [Value])] = []
@@ -344,7 +344,7 @@ public func groupBy(_ items: Value, _ cb: Value, propertyKeys: bool) throws -> [
 }
 
 /// ObjectToString is Object.prototype.toString (§20.1.3.6).
-public func ObjectToString(_ v: Value) throws -> str.JSString {
+public func ObjectToString(v: Value) throws -> str.JSString {
     if v.IsUndefined { return str.Name("[object Undefined]") }
     if v.IsNull { return str.Name("[object Null]") }
     let o = try object.ToObject(v)
@@ -372,7 +372,7 @@ public func ObjectToString(_ v: Value) throws -> str.JSString {
 
 // MARK: Function (§20.2)
 
-func installFunction(_ r: object.Realm) {
+func installFunction(r: object.Realm) {
     let fp = r.FunctionPrototype
     fp.DefineData(key("length"), .number(0), writable: false, enumerable: false, configurable: true)
     fp.DefineData(key("name"), .string(str.JSString.Empty), writable: false, enumerable: false, configurable: true)
@@ -438,7 +438,7 @@ func installFunction(_ r: object.Realm) {
 }
 
 /// FunctionToString is Function.prototype.toString (§20.2.3.5).
-public func FunctionToString(_ v: Value) throws -> string {
+public func FunctionToString(v: Value) throws -> string {
     guard case .object(let o) = v, o.IsCallable else {
         throw object.ThrowTypeError("Function.prototype.toString requires that 'this' be a Function")
     }
@@ -454,7 +454,7 @@ public func FunctionToString(_ v: Value) throws -> string {
 
 // MARK: Boolean (§20.3)
 
-func installBoolean(_ r: object.Realm) {
+func installBoolean(r: object.Realm) {
     let bp = r.BooleanPrototype
     bp.Kind = .boolean
     bp.PrimitiveValue = .bool(false)
@@ -474,7 +474,7 @@ func installBoolean(_ r: object.Realm) {
     }
 }
 
-func thisBoolean(_ v: Value, _ method: string) throws -> bool {
+func thisBoolean(v: Value, method: string) throws -> bool {
     if case .bool(let b) = v { return b }
     if case .object(let o) = v, o.Kind == .boolean, case .bool(let b) = o.PrimitiveValue { return b }
     throw object.ThrowTypeError("Boolean.prototype.\(method) requires that 'this' be a Boolean")
@@ -482,7 +482,7 @@ func thisBoolean(_ v: Value, _ method: string) throws -> bool {
 
 // MARK: Symbol (§20.4)
 
-func installSymbol(_ r: object.Realm) {
+func installSymbol(r: object.Realm) {
     let sp = r.SymbolPrototype
     let ctor = r.Constructor("Symbol", 0, prototype: sp) { _, args, nt in
         if nt != nil { throw object.ThrowTypeError("Symbol is not a constructor") }
@@ -534,7 +534,7 @@ func installSymbol(_ r: object.Realm) {
     sp.DefineData(.symbol(value.SymToStringTag), .string(str.Name("Symbol")), writable: false, enumerable: false, configurable: true)
 }
 
-func thisSymbol(_ v: Value, _ method: string) throws -> value.Symbol {
+func thisSymbol(v: Value, method: string) throws -> value.Symbol {
     if case .symbol(let s) = v { return s }
     if case .object(let o) = v, o.Kind == .symbol, case .symbol(let s) = o.PrimitiveValue { return s }
     throw object.ThrowTypeError("Symbol.prototype.\(method) requires that 'this' be a Symbol")
@@ -542,7 +542,7 @@ func thisSymbol(_ v: Value, _ method: string) throws -> value.Symbol {
 
 // MARK: Error (§20.5)
 
-func installErrors(_ r: object.Realm) {
+func installErrors(r: object.Realm) {
     let ep = r.ErrorPrototype
     let errorCtor = makeErrorConstructor(r, "Error", ep, parent: nil)
     ep.DefineData(key("name"), .string(str.Name("Error")), writable: true, enumerable: false, configurable: true)
@@ -626,7 +626,7 @@ func installErrors(_ r: object.Realm) {
     ap.DefineData(key("message"), .string(str.JSString.Empty), writable: true, enumerable: false, configurable: true)
 }
 
-func makeErrorConstructor(_ r: object.Realm, _ name: string, _ proto: object.JSObject, parent: object.JSObject?) -> object.JSObject {
+func makeErrorConstructor(r: object.Realm, name: string, proto: object.JSObject, parent: object.JSObject?) -> object.JSObject {
     var selfRef: object.JSObject? = nil
     let ctor = r.Constructor(name, 1, prototype: proto) { _, args, nt in
         let o = try object.OrdinaryCreateFromConstructor(nt ?? selfRef!, proto)
@@ -645,7 +645,7 @@ func makeErrorConstructor(_ r: object.Realm, _ name: string, _ proto: object.JSO
     return ctor
 }
 
-func installCause(_ o: object.JSObject, _ options: Value) throws {
+func installCause(o: object.JSObject, options: Value) throws {
     if case .object(let opts) = options, try opts.HasProperty(key("cause")) {
         let c = try opts.Get(key("cause"), options)
         o.DefineData(key("cause"), c, writable: true, enumerable: false, configurable: true)

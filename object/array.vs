@@ -40,7 +40,7 @@ public final class ArrayObject: JSObject {
         Sparse = true
     }
 
-    public override func GetOwnProperty(_ key: value.PropertyKey) throws -> PropertyDescriptor? {
+    public override func GetOwnProperty(key: value.PropertyKey) throws -> PropertyDescriptor? {
         switch key {
         case .index(let i):
             if !Sparse {
@@ -60,7 +60,7 @@ public final class ArrayObject: JSObject {
         return s < 0 ? nil : slots[s].Descriptor
     }
 
-    public override func DefineOwnProperty(_ key: value.PropertyKey, _ desc: PropertyDescriptor) throws -> bool {
+    public override func DefineOwnProperty(key: value.PropertyKey, desc: PropertyDescriptor) throws -> bool {
         if key == keyLength {
             return try setLength(desc)
         }
@@ -95,7 +95,7 @@ public final class ArrayObject: JSObject {
         return try defineSparse(i, desc)
     }
 
-    func defineSparse(_ i: uint32, _ desc: PropertyDescriptor) throws -> bool {
+    func defineSparse(i: uint32, desc: PropertyDescriptor) throws -> bool {
         let ok = try self.OrdinaryDefineOwnProperty(.index(i), desc)
         if !ok { return false }
         if i >= Length { Length = i + 1 }
@@ -103,7 +103,7 @@ public final class ArrayObject: JSObject {
     }
 
     /// setLength is ArraySetLength (§10.4.2.4).
-    func setLength(_ desc: PropertyDescriptor) throws -> bool {
+    func setLength(desc: PropertyDescriptor) throws -> bool {
         guard let v = desc.Value else {
             // Only attributes change.
             if desc.Configurable == true || desc.Enumerable == true || desc.IsAccessor { return false }
@@ -155,12 +155,12 @@ public final class ArrayObject: JSObject {
         return true
     }
 
-    public override func HasProperty(_ key: value.PropertyKey) throws -> bool {
+    public override func HasProperty(key: value.PropertyKey) throws -> bool {
         if case .index(let i) = key, !Sparse, int(i) < Dense.count, !Dense[int(i)].IsEmpty { return true }
         return try self.HasPropertySlow(key)
     }
 
-    public override func Get(_ key: value.PropertyKey, _ receiver: Value) throws -> Value {
+    public override func Get(key: value.PropertyKey, receiver: Value) throws -> Value {
         if case .index(let i) = key, !Sparse {
             if int(i) < Dense.count {
                 let v = Dense[int(i)]
@@ -173,7 +173,7 @@ public final class ArrayObject: JSObject {
         return try self.GetSlow(key, receiver)
     }
 
-    public override func Set(_ key: value.PropertyKey, _ v: Value, _ receiver: Value) throws -> bool {
+    public override func Set(key: value.PropertyKey, v: Value, receiver: Value) throws -> bool {
         if case .index(let i) = key, !Sparse, case .object(let r) = receiver, r === self {
             let idx = int(i)
             if idx < Dense.count && !Dense[idx].IsEmpty {
@@ -204,7 +204,7 @@ public final class ArrayObject: JSObject {
         return false
     }
 
-    public override func Delete(_ key: value.PropertyKey) throws -> bool {
+    public override func Delete(key: value.PropertyKey) throws -> bool {
         if case .index(let i) = key, !Sparse {
             let idx = int(i)
             if idx < Dense.count {
@@ -252,7 +252,7 @@ public final class ArrayObject: JSObject {
 
     /// Push appends without the generic protocol, for built-ins that made
     /// the array themselves.
-    public func Push(_ v: Value) {
+    public func Push(v: Value) {
         if !Sparse && Dense.count == int(Length) {
             Dense.append(v)
             Length += 1
@@ -276,12 +276,12 @@ public final class ArgumentsObject: JSObject {
 
     public override var isOrdinaryLookup: bool { return Env == nil }
 
-    func mapped(_ key: value.PropertyKey) -> int {
+    func mapped(key: value.PropertyKey) -> int {
         guard Env != nil, case .index(let i) = key, int(i) < Map.count else { return -1 }
         return Map[int(i)]
     }
 
-    public override func GetOwnProperty(_ key: value.PropertyKey) throws -> PropertyDescriptor? {
+    public override func GetOwnProperty(key: value.PropertyKey) throws -> PropertyDescriptor? {
         let s = self.find(key)
         if s < 0 { return nil }
         var d = slots[s].Descriptor
@@ -290,7 +290,7 @@ public final class ArgumentsObject: JSObject {
         return d
     }
 
-    public override func DefineOwnProperty(_ key: value.PropertyKey, _ desc: PropertyDescriptor) throws -> bool {
+    public override func DefineOwnProperty(key: value.PropertyKey, desc: PropertyDescriptor) throws -> bool {
         let m = mapped(key)
         var d = desc
         if m >= 0 && d.IsData && d.Value == nil && d.Writable == false {
@@ -308,17 +308,17 @@ public final class ArgumentsObject: JSObject {
         return true
     }
 
-    func unmap(_ key: value.PropertyKey) {
+    func unmap(key: value.PropertyKey) {
         if case .index(let i) = key, int(i) < Map.count { Map[int(i)] = -1 }
     }
 
-    public override func Get(_ key: value.PropertyKey, _ receiver: Value) throws -> Value {
+    public override func Get(key: value.PropertyKey, receiver: Value) throws -> Value {
         let m = mapped(key)
         if m >= 0 && self.find(key) >= 0 { return Env!.Slots[m] }
         return try self.GetSlow(key, receiver)
     }
 
-    public override func Set(_ key: value.PropertyKey, _ v: Value, _ receiver: Value) throws -> bool {
+    public override func Set(key: value.PropertyKey, v: Value, receiver: Value) throws -> bool {
         let m = mapped(key)
         if m >= 0, case .object(let r) = receiver, r === self, self.find(key) >= 0 {
             Env!.Slots[m] = v
@@ -326,7 +326,7 @@ public final class ArgumentsObject: JSObject {
         return try self.OrdinarySet(key, v, receiver)
     }
 
-    public override func Delete(_ key: value.PropertyKey) throws -> bool {
+    public override func Delete(key: value.PropertyKey) throws -> bool {
         let ok = try super.Delete(key)
         if ok { unmap(key) }
         return ok
@@ -338,7 +338,7 @@ public final class ArgumentsObject: JSObject {
 public final class StringObject: JSObject {
     public let Str: str.JSString
 
-    public init(_ s: str.JSString, proto: JSObject?) {
+    public init(s: str.JSString, proto: JSObject?) {
         self.Str = s
         super.init(proto: proto)
         self.Kind = .string
@@ -348,18 +348,18 @@ public final class StringObject: JSObject {
 
     public override var isOrdinaryLookup: bool { return false }
 
-    func stringProperty(_ key: value.PropertyKey) -> PropertyDescriptor? {
+    func stringProperty(key: value.PropertyKey) -> PropertyDescriptor? {
         guard case .index(let i) = key, int(i) < Str.Length else { return nil }
         return PropertyDescriptor.Data(.string(str.JSString([Str.At(int(i))])), writable: false, enumerable: true, configurable: false)
     }
 
-    public override func GetOwnProperty(_ key: value.PropertyKey) throws -> PropertyDescriptor? {
+    public override func GetOwnProperty(key: value.PropertyKey) throws -> PropertyDescriptor? {
         let s = self.find(key)
         if s >= 0 { return slots[s].Descriptor }
         return stringProperty(key)
     }
 
-    public override func DefineOwnProperty(_ key: value.PropertyKey, _ desc: PropertyDescriptor) throws -> bool {
+    public override func DefineOwnProperty(key: value.PropertyKey, desc: PropertyDescriptor) throws -> bool {
         if let cur = stringProperty(key) {
             return self.ValidateAndApply(key, false, desc, cur)
         }

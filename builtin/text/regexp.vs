@@ -31,7 +31,7 @@ let lastIndexKey = value.PropertyKey.Named("lastIndex")
 /// pattern built again, compiles once. A program is immutable.
 var programCache: [string: regexp.Program] = [:]
 
-func compileProgram(_ source: str.JSString, _ flags: str.JSString) throws -> regexp.Program {
+func compileProgram(source: str.JSString, flags: str.JSString) throws -> regexp.Program {
     guard let f = syntax.ParseFlags(flags.Units) else {
         throw object.ThrowSyntaxError("Invalid flags supplied to RegExp constructor '\(flags.String)'")
     }
@@ -48,7 +48,7 @@ func compileProgram(_ source: str.JSString, _ flags: str.JSString) throws -> reg
 }
 
 /// regExpAlloc is RegExpAlloc (§22.2.3.2).
-func regExpAlloc(_ r: object.Realm, _ newTarget: object.JSObject) throws -> RegExpObject {
+func regExpAlloc(r: object.Realm, newTarget: object.JSObject) throws -> RegExpObject {
     let proto = try object.GetPrototypeFromConstructor(newTarget, r.RegExpPrototype)
     let o = RegExpObject(proto: proto)
     o.DefineData(lastIndexKey, .undefined, writable: true, enumerable: false, configurable: false)
@@ -56,7 +56,7 @@ func regExpAlloc(_ r: object.Realm, _ newTarget: object.JSObject) throws -> RegE
 }
 
 /// regExpInitialize is RegExpInitialize (§22.2.3.3).
-func regExpInitialize(_ o: RegExpObject, _ pattern: Value, _ flags: Value) throws -> RegExpObject {
+func regExpInitialize(o: RegExpObject, pattern: Value, flags: Value) throws -> RegExpObject {
     let p = pattern.IsUndefined ? str.JSString.Empty : try object.ToString(pattern)
     let f = flags.IsUndefined ? str.JSString.Empty : try object.ToString(flags)
     let prog = try compileProgram(p, f)
@@ -67,24 +67,24 @@ func regExpInitialize(_ o: RegExpObject, _ pattern: Value, _ flags: Value) throw
     return o
 }
 
-func setLastIndex(_ o: object.JSObject, _ i: int) throws {
+func setLastIndex(o: object.JSObject, i: int) throws {
     if !(try o.Set(lastIndexKey, .number(float64(i)), .object(o))) {
         throw object.ThrowTypeError("Cannot assign to read only property 'lastIndex' of object '\(object.Describe(.object(o)))'")
     }
 }
 
-func setLastIndexValue(_ o: object.JSObject, _ v: Value) throws {
+func setLastIndexValue(o: object.JSObject, v: Value) throws {
     if !(try o.Set(lastIndexKey, v, .object(o))) {
         throw object.ThrowTypeError("Cannot assign to read only property 'lastIndex' of object '\(object.Describe(.object(o)))'")
     }
 }
 
-func getLastIndex(_ o: object.JSObject) throws -> float64 {
+func getLastIndex(o: object.JSObject) throws -> float64 {
     return try object.ToLength(try o.Get(lastIndexKey, .object(o)))
 }
 
 /// thisRegExpObject requires this be an object (for the generic methods).
-func thisObject(_ v: Value, _ method: string) throws -> object.JSObject {
+func thisObject(v: Value, method: string) throws -> object.JSObject {
     guard case .object(let o) = v else {
         throw object.ThrowTypeError("RegExp.prototype.\(method) called on incompatible receiver \(object.Describe(v))")
     }
@@ -92,7 +92,7 @@ func thisObject(_ v: Value, _ method: string) throws -> object.JSObject {
 }
 
 /// advanceStringIndex is AdvanceStringIndex (§22.2.7.3).
-func advanceStringIndex(_ s: [uint16], _ index: int, _ unicode: bool) -> int {
+func advanceStringIndex(s: [uint16], index: int, unicode: bool) -> int {
     if !unicode || index + 1 >= s.count { return index + 1 }
     if s[index] >= 0xD800 && s[index] <= 0xDBFF && s[index + 1] >= 0xDC00 && s[index + 1] <= 0xDFFF {
         return index + 2
@@ -103,7 +103,7 @@ func advanceStringIndex(_ s: [uint16], _ index: int, _ unicode: bool) -> int {
 // MARK: exec
 
 /// regExpBuiltinExec is RegExpBuiltinExec (§22.2.7.2).
-func regExpBuiltinExec(_ r: object.Realm, _ rx: RegExpObject, _ s: str.JSString) throws -> Value {
+func regExpBuiltinExec(r: object.Realm, rx: RegExpObject, s: str.JSString) throws -> Value {
     let su = s.Units
     var lastIndex = try getLastIndex(rx)
     guard let prog = rx.Program else { throw object.ThrowTypeError("RegExp is not initialized") }
@@ -201,7 +201,7 @@ func regExpBuiltinExec(_ r: object.Realm, _ rx: RegExpObject, _ s: str.JSString)
 }
 
 /// regExpExec is RegExpExec (§22.2.7.1): a user exec if there is one.
-func regExpExec(_ r: object.Realm, _ rx: object.JSObject, _ s: str.JSString) throws -> Value {
+func regExpExec(r: object.Realm, rx: object.JSObject, s: str.JSString) throws -> Value {
     let exec = try rx.Get(object.Key("exec"), .object(rx))
     if exec.IsCallable {
         if let bo = rx as? RegExpObject, case .object(let eo) = exec, eo === r.Intrinsics["RegExpProtoExec"] {
@@ -219,12 +219,12 @@ func regExpExec(_ r: object.Realm, _ rx: object.JSObject, _ s: str.JSString) thr
     return try regExpBuiltinExec(r, bo, s)
 }
 
-func getString(_ o: Value, _ k: string) throws -> str.JSString {
+func getString(o: Value, k: string) throws -> str.JSString {
     guard case .object(let obj) = o else { return str.JSString.Empty }
     return try object.ToString(try obj.Get(object.Key(k), o))
 }
 
-func flagsContain(_ f: str.JSString, _ c: uint16) -> bool {
+func flagsContain(f: str.JSString, c: uint16) -> bool {
     return f.Units.contains(c)
 }
 
@@ -232,7 +232,7 @@ func flagsContain(_ f: str.JSString, _ c: uint16) -> bool {
 
 /// escapePattern is EscapeRegExpPattern (§22.2.6.13.1): the source as it
 /// would be written in a literal.
-func escapePattern(_ s: str.JSString) -> str.JSString {
+func escapePattern(s: str.JSString) -> str.JSString {
     let u = s.Units
     if u.isEmpty { return str.Name("(?:)") }
     var b = str.Builder()
@@ -261,7 +261,7 @@ func escapePattern(_ s: str.JSString) -> str.JSString {
     return b.Build()
 }
 
-func appendEscapedLineTerminator(_ b: inout str.Builder, _ c: uint16, escaped: bool) {
+func appendEscapedLineTerminator(b: inout str.Builder, c: uint16, escaped: bool) {
     let pre = escaped ? "" : "\\"
     switch c {
     case 0x0A: b.Append(str.JSString.From(pre + "n"))
@@ -274,7 +274,7 @@ func appendEscapedLineTerminator(_ b: inout str.Builder, _ c: uint16, escaped: b
 
 // MARK: RegExp.escape (ES2025)
 
-func regExpEscape(_ s: str.JSString) -> str.JSString {
+func regExpEscape(s: str.JSString) -> str.JSString {
     let u = s.Units
     var b = str.Builder()
     var i = 0
@@ -297,16 +297,16 @@ func regExpEscape(_ s: str.JSString) -> str.JSString {
     return b.Build()
 }
 
-func hex2(_ v: uint32) -> string {
+func hex2(v: uint32) -> string {
     let digits = [uint8]("0123456789abcdef".utf8)
     return string(decoding: [digits[int((v >> 4) & 0xF)], digits[int(v & 0xF)]], as: UTF8.self)
 }
 
-func hex4(_ v: uint32) -> string {
+func hex4(v: uint32) -> string {
     return hex2(v >> 8) + hex2(v & 0xFF)
 }
 
-func encodeForRegExpEscape(_ b: inout str.Builder, _ c: uint32, _ u: [uint16], _ i: int, _ width: int) {
+func encodeForRegExpEscape(b: inout str.Builder, c: uint32, u: [uint16], i: int, width: int) {
     let syntaxChars: [uint32] = [0x5E, 0x24, 0x5C, 0x2E, 0x2A, 0x2B, 0x3F, 0x28, 0x29, 0x5B, 0x5D, 0x7B, 0x7D, 0x7C, 0x2F]
     if syntaxChars.contains(c) {
         b.AppendUnit(0x5C)
@@ -341,7 +341,7 @@ func encodeForRegExpEscape(_ b: inout str.Builder, _ c: uint32, _ u: [uint16], _
 
 // MARK: installation
 
-func installRegExp(_ r: object.Realm) {
+func installRegExp(r: object.Realm) {
     let rp = r.RegExpPrototype
     var ctorRef: object.JSObject? = nil
     let ctor = r.Constructor("RegExp", 2, prototype: rp) { _, args, nt in
@@ -441,7 +441,7 @@ func installRegExp(_ r: object.Realm) {
         }
         return .string(str.JSString(out))
     }
-    func flagGetter(_ name: string, _ pick: @escaping (syntax.Flags) -> bool) {
+    func flagGetter(name: string, pick: @escaping (syntax.Flags) -> bool) {
         r.Getter(rp, object.Key(name)) { thisV, _, _ in
             guard case .object(let o) = thisV else {
                 throw object.ThrowTypeError("RegExp.prototype.\(name) getter called on non-object \(object.Describe(thisV))")

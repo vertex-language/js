@@ -160,7 +160,7 @@ function (disposeSym, asyncDisposeSym, toStringTagSym, isCallable, call, makeSup
 }
 """
 
-func installDispose(_ r: object.Realm) {
+func installDispose(r: object.Realm) {
     let helpers: [Value] = [
         .symbol(value.SymDispose),
         .symbol(value.SymAsyncDispose),
@@ -189,7 +189,7 @@ func installDispose(_ r: object.Realm) {
         }),
     ]
     guard let select = try? r.SelfHosted(disposeSource, helpers) else { return }
-    func pick(_ i: int) -> object.JSObject? {
+    func pick(i: int) -> object.JSObject? {
         if case .object(let o) = (try? object.Call(.object(select), .undefined, [.number(float64(i))])) ?? .undefined { return o }
         return nil
     }

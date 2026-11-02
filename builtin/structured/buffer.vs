@@ -39,7 +39,7 @@ public final class ArrayBufferObject: object.JSObject {
 /// maxAllocation bounds a buffer's size ("Array buffer allocation failed").
 let maxAllocation = 1 << 31
 
-func thisBuffer(_ v: Value, shared: bool, _ method: string) throws -> ArrayBufferObject {
+func thisBuffer(v: Value, shared: bool, method: string) throws -> ArrayBufferObject {
     guard case .object(let o) = v, let b = o as? ArrayBufferObject, b.Shared == shared else {
         let name = shared ? "SharedArrayBuffer" : "ArrayBuffer"
         throw object.ThrowTypeError("Method \(name).prototype.\(method) called on incompatible receiver \(object.Describe(v))")
@@ -48,14 +48,14 @@ func thisBuffer(_ v: Value, shared: bool, _ method: string) throws -> ArrayBuffe
 }
 
 /// maxByteLengthOption is GetArrayBufferMaxByteLengthOption (§25.1.3.7): -1 when none.
-func maxByteLengthOption(_ options: Value) throws -> int {
+func maxByteLengthOption(options: Value) throws -> int {
     guard case .object(let o) = options else { return -1 }
     let m = try o.Get(object.Key("maxByteLength"), options)
     if m.IsUndefined { return -1 }
     return try object.ToIndex(m)
 }
 
-func allocateBuffer(_ r: object.Realm, _ newTarget: object.JSObject, _ length: int, max: int, shared: bool) throws -> ArrayBufferObject {
+func allocateBuffer(r: object.Realm, newTarget: object.JSObject, length: int, max: int, shared: bool) throws -> ArrayBufferObject {
     if max >= 0 && length > max {
         throw object.ThrowRangeError("Invalid array buffer max length")
     }
@@ -69,12 +69,12 @@ func allocateBuffer(_ r: object.Realm, _ newTarget: object.JSObject, _ length: i
     return b
 }
 
-func newBuffer(_ r: object.Realm, _ length: int) throws -> ArrayBufferObject {
+func newBuffer(r: object.Realm, length: int) throws -> ArrayBufferObject {
     if length > maxAllocation { throw object.ThrowRangeError("Array buffer allocation failed") }
     return ArrayBufferObject(proto: r.Intrinsics["ArrayBufferPrototype"]!, length: length, shared: false)
 }
 
-func clampRelative(_ v: Value, _ len: int, _ dflt: int) throws -> int {
+func clampRelative(v: Value, len: int, dflt: int) throws -> int {
     if v.IsUndefined { return dflt }
     let rel = try object.ToIntegerOrInfinity(v)
     if rel < 0 {
@@ -84,7 +84,7 @@ func clampRelative(_ v: Value, _ len: int, _ dflt: int) throws -> int {
     return rel > float64(len) ? len : int(rel)
 }
 
-func installArrayBuffer(_ r: object.Realm) {
+func installArrayBuffer(r: object.Realm) {
     let abp = object.JSObject(proto: r.ObjectPrototype)
     r.Intrinsics["ArrayBufferPrototype"] = abp
     var ctorRef: object.JSObject? = nil
@@ -147,7 +147,7 @@ func installArrayBuffer(_ r: object.Realm) {
         }
         return .object(nb)
     }
-    func transfer(_ thisV: Value, _ args: [Value], fixed: bool, _ name: string) throws -> Value {
+    func transfer(thisV: Value, args: [Value], fixed: bool, name: string) throws -> Value {
         let b = try thisBuffer(thisV, shared: false, name)
         let newLenV = object.Arg(args, 0)
         let newLen = newLenV.IsUndefined ? b.ByteLength : try object.ToIndex(newLenV)
@@ -222,7 +222,7 @@ func installArrayBuffer(_ r: object.Realm) {
     sabp.DefineData(.symbol(value.SymToStringTag), .string(str.Name("SharedArrayBuffer")), writable: false, enumerable: false, configurable: true)
 }
 
-func resizeData(_ d: inout [uint8], _ n: int) {
+func resizeData(d: inout [uint8], n: int) {
     if n < d.count {
         d = Array(d[0..<n])
     } else {
@@ -280,14 +280,14 @@ let allElementTypes: [ElementType] = [.int8, .uint8, .uint8Clamped, .int16, .uin
 
 /// toElementValue converts v for storage: ToBigInt for BigInt types,
 /// ToNumber otherwise.
-func toElementValue(_ t: ElementType, _ v: Value) throws -> Value {
+func toElementValue(t: ElementType, v: Value) throws -> Value {
     if t.IsBigInt { return .bigint(try object.ToBigInt(v)) }
     if case .number = v { return v }
     return .number(try object.ToNumber(v))
 }
 
 /// modular is ToUint32-style wrapping of a number (NaN and infinities to 0).
-func modular(_ d: float64) -> uint64 {
+func modular(d: float64) -> uint64 {
     if d.isNaN || d.isInfinite { return 0 }
     let t = d.rounded(.towardZero)
     var m = t.truncatingRemainder(dividingBy: 4294967296.0)
@@ -295,7 +295,7 @@ func modular(_ d: float64) -> uint64 {
     return uint64(m)
 }
 
-func clampUint8(_ d: float64) -> uint64 {
+func clampUint8(d: float64) -> uint64 {
     if d.isNaN || d <= 0 { return 0 }
     if d >= 255 { return 255 }
     let f = d.rounded(.down)
@@ -306,7 +306,7 @@ func clampUint8(_ d: float64) -> uint64 {
 }
 
 /// elementBits is NumericToRawBytes as an integer of the element's width.
-func elementBits(_ t: ElementType, _ v: Value) -> uint64 {
+func elementBits(t: ElementType, v: Value) -> uint64 {
     switch t {
     case .bigInt64, .bigUint64:
         if case .bigint(let b) = v { return b.ToUInt64() }
@@ -329,7 +329,7 @@ func elementBits(_ t: ElementType, _ v: Value) -> uint64 {
 }
 
 /// bitsValue is RawBytesToNumeric.
-func bitsValue(_ t: ElementType, _ bits: uint64) -> Value {
+func bitsValue(t: ElementType, bits: uint64) -> Value {
     switch t {
     case .int8:
         let v = int(bits & 0xFF)
@@ -359,7 +359,7 @@ func bitsValue(_ t: ElementType, _ bits: uint64) -> Value {
     }
 }
 
-func readBits(_ data: [uint8], _ off: int, _ size: int, little: bool) -> uint64 {
+func readBits(data: [uint8], off: int, size: int, little: bool) -> uint64 {
     var v: uint64 = 0
     var i = 0
     while i < size {
@@ -370,7 +370,7 @@ func readBits(_ data: [uint8], _ off: int, _ size: int, little: bool) -> uint64 
     return v
 }
 
-func writeBits(_ data: inout [uint8], _ off: int, _ size: int, _ bits: uint64, little: bool) {
+func writeBits(data: inout [uint8], off: int, size: int, bits: uint64, little: bool) {
     var i = 0
     while i < size {
         data[off + (little ? i : size - 1 - i)] = uint8((bits >> uint64(8 * i)) & 0xFF)
@@ -417,7 +417,7 @@ public final class TypedArrayObject: object.JSObject {
 
     public var ByteLength: int { return Length * Type.Size }
 
-    func isValidIndex(_ d: float64) -> bool {
+    func isValidIndex(d: float64) -> bool {
         if Buffer.Detached { return false }
         if d != d.rounded(.towardZero) { return false }
         if d == 0 && d.sign == .minus { return false }
@@ -425,19 +425,19 @@ public final class TypedArrayObject: object.JSObject {
     }
 
     /// GetElement reads element i (in range).
-    public func GetElement(_ i: int) -> Value {
+    public func GetElement(i: int) -> Value {
         let bits = readBits(Buffer.Data, ByteOffset + i * Type.Size, Type.Size, little: true)
         return bitsValue(Type, bits)
     }
 
     /// SetElement writes an already-converted value at i (in range).
-    public func SetElement(_ i: int, _ v: Value) {
+    public func SetElement(i: int, v: Value) {
         writeBits(&Buffer.Data, ByteOffset + i * Type.Size, Type.Size, elementBits(Type, v), little: true)
     }
 
     /// numericIndex is CanonicalNumericIndexString for a key: the index,
     /// or nil for a key that is not numeric.
-    func numericIndex(_ key: value.PropertyKey) -> float64? {
+    func numericIndex(key: value.PropertyKey) -> float64? {
         switch key {
         case .index(let i):
             return float64(i)
@@ -451,7 +451,7 @@ public final class TypedArrayObject: object.JSObject {
         }
     }
 
-    public override func GetOwnProperty(_ key: value.PropertyKey) throws -> object.PropertyDescriptor? {
+    public override func GetOwnProperty(key: value.PropertyKey) throws -> object.PropertyDescriptor? {
         if let n = numericIndex(key) {
             if !isValidIndex(n) { return nil }
             return object.PropertyDescriptor.Data(GetElement(int(n)), writable: true, enumerable: true, configurable: true)
@@ -459,12 +459,12 @@ public final class TypedArrayObject: object.JSObject {
         return try super.GetOwnProperty(key)
     }
 
-    public override func HasProperty(_ key: value.PropertyKey) throws -> bool {
+    public override func HasProperty(key: value.PropertyKey) throws -> bool {
         if let n = numericIndex(key) { return isValidIndex(n) }
         return try HasPropertySlow(key)
     }
 
-    public override func DefineOwnProperty(_ key: value.PropertyKey, _ desc: object.PropertyDescriptor) throws -> bool {
+    public override func DefineOwnProperty(key: value.PropertyKey, desc: object.PropertyDescriptor) throws -> bool {
         if let n = numericIndex(key) {
             if !isValidIndex(n) { return false }
             if desc.Configurable == false || desc.Enumerable == false || desc.IsAccessor || desc.Writable == false { return false }
@@ -474,7 +474,7 @@ public final class TypedArrayObject: object.JSObject {
         return try OrdinaryDefineOwnProperty(key, desc)
     }
 
-    public override func Get(_ key: value.PropertyKey, _ receiver: Value) throws -> Value {
+    public override func Get(key: value.PropertyKey, receiver: Value) throws -> Value {
         if let n = numericIndex(key) {
             if !isValidIndex(n) { return .undefined }
             return GetElement(int(n))
@@ -484,12 +484,12 @@ public final class TypedArrayObject: object.JSObject {
 
     /// setIndexed is TypedArraySetElement: convert, then store if the
     /// index is still valid.
-    func setIndexed(_ n: float64, _ v: Value) throws {
+    func setIndexed(n: float64, v: Value) throws {
         let num = try toElementValue(Type, v)
         if isValidIndex(n) { SetElement(int(n), num) }
     }
 
-    public override func Set(_ key: value.PropertyKey, _ v: Value, _ receiver: Value) throws -> bool {
+    public override func Set(key: value.PropertyKey, v: Value, receiver: Value) throws -> bool {
         if let n = numericIndex(key) {
             if case .object(let ro) = receiver, ro === self {
                 try setIndexed(n, v)
@@ -500,7 +500,7 @@ public final class TypedArrayObject: object.JSObject {
         return try OrdinarySet(key, v, receiver)
     }
 
-    public override func Delete(_ key: value.PropertyKey) throws -> bool {
+    public override func Delete(key: value.PropertyKey) throws -> bool {
         if let n = numericIndex(key) { return !isValidIndex(n) }
         return try super.Delete(key)
     }
@@ -519,7 +519,7 @@ public final class TypedArrayObject: object.JSObject {
 }
 
 /// validTypedArray is ValidateTypedArray: a typed array not out of bounds.
-func validTypedArray(_ v: Value, _ method: string) throws -> TypedArrayObject {
+func validTypedArray(v: Value, method: string) throws -> TypedArrayObject {
     guard case .object(let o) = v, let ta = o as? TypedArrayObject else {
         throw object.ThrowTypeError("this is not a typed array.")
     }
@@ -531,7 +531,7 @@ func validTypedArray(_ v: Value, _ method: string) throws -> TypedArrayObject {
 
 /// typedArrayCreate is TypedArrayCreateFromConstructor (§23.2.4.2):
 /// construct and check the result, and its length when one was asked for.
-func typedArrayCreate(_ c: object.JSObject, _ args: [Value]) throws -> TypedArrayObject {
+func typedArrayCreate(c: object.JSObject, args: [Value]) throws -> TypedArrayObject {
     let v = try object.Construct(c, args)
     let ta = try validTypedArray(v, "construct")
     if args.count == 1, case .number(let n) = args[0], float64(ta.Length) < n {
@@ -541,7 +541,7 @@ func typedArrayCreate(_ c: object.JSObject, _ args: [Value]) throws -> TypedArra
 }
 
 /// speciesCreate is TypedArraySpeciesCreate (§23.2.4.1).
-func speciesCreate(_ r: object.Realm, _ exemplar: TypedArrayObject, _ args: [Value]) throws -> TypedArrayObject {
+func speciesCreate(r: object.Realm, exemplar: TypedArrayObject, args: [Value]) throws -> TypedArrayObject {
     let dflt = r.Intrinsics[exemplar.Type.Name]!
     let c = try object.SpeciesConstructor(exemplar, dflt)
     let result = try typedArrayCreate(c, args)
@@ -552,7 +552,7 @@ func speciesCreate(_ r: object.Realm, _ exemplar: TypedArrayObject, _ args: [Val
 }
 
 /// allocateTypedArray makes a typed array of t with a new buffer of length elements.
-func allocateTypedArray(_ r: object.Realm, _ t: ElementType, _ proto: object.JSObject, _ length: int) throws -> TypedArrayObject {
+func allocateTypedArray(r: object.Realm, t: ElementType, proto: object.JSObject, length: int) throws -> TypedArrayObject {
     if length * t.Size > maxAllocation { throw object.ThrowRangeError("Invalid typed array length: \(length)") }
     let buf = try newBuffer(r, length * t.Size)
     let ta = TypedArrayObject(proto: proto, type: t, buffer: buf)
@@ -560,7 +560,7 @@ func allocateTypedArray(_ r: object.Realm, _ t: ElementType, _ proto: object.JSO
     return ta
 }
 
-func makeTypedArray(_ r: object.Realm, _ t: ElementType, _ args: [Value], _ newTarget: object.JSObject) throws -> TypedArrayObject {
+func makeTypedArray(r: object.Realm, t: ElementType, args: [Value], newTarget: object.JSObject) throws -> TypedArrayObject {
     let proto = try object.GetPrototypeFromConstructor(newTarget, r.Intrinsics[t.Name + "Prototype"]!)
     let first = object.Arg(args, 0)
     guard case .object(let fo) = first else {
@@ -634,7 +634,7 @@ func makeTypedArray(_ r: object.Realm, _ t: ElementType, _ args: [Value], _ newT
 
 /// compareElements is the default typed array sort order: numeric, -0
 /// before +0, NaN last.
-func compareElements(_ a: Value, _ b: Value) -> int {
+func compareElements(a: Value, b: Value) -> int {
     if case .bigint(let x) = a, case .bigint(let y) = b { return value.BigInt.Compare(x, y) }
     guard case .number(let x) = a, case .number(let y) = b else { return 0 }
     if x.isNaN { return y.isNaN ? 0 : 1 }
@@ -651,7 +651,7 @@ func compareElements(_ a: Value, _ b: Value) -> int {
 }
 
 /// mergeSort sorts stably with a comparator that may throw.
-func mergeSort(_ a: [Value], _ cmp: (Value, Value) throws -> int) throws -> [Value] {
+func mergeSort(a: [Value], cmp: (Value, Value) throws -> int) throws -> [Value] {
     if a.count <= 1 { return a }
     var src = a
     var dst = a
@@ -697,7 +697,7 @@ func mergeSort(_ a: [Value], _ cmp: (Value, Value) throws -> int) throws -> [Val
 
 // MARK: %TypedArray%
 
-func installTypedArrays(_ r: object.Realm) {
+func installTypedArrays(r: object.Realm) {
     let tap = object.JSObject(proto: r.ObjectPrototype)
     r.Intrinsics["TypedArrayPrototype"] = tap
     let ta = r.Constructor("TypedArray", 0, prototype: tap, global: false) { _, _, _ in
@@ -792,11 +792,11 @@ func installTypedArrays(_ r: object.Realm) {
         tap.DefineData(object.Key("toString"), ats, writable: true, enumerable: false, configurable: true)
     }
 
-    func callback(_ v: Value) throws -> Value {
+    func callback(v: Value) throws -> Value {
         if !v.IsCallable { throw object.ThrowTypeError("\(object.Describe(v)) is not a function") }
         return v
     }
-    func idx(_ i: int) -> Value { return .number(float64(i)) }
+    func idx(i: int) -> Value { return .number(float64(i)) }
 
     r.Method(tap, "at", 1) { thisV, args, _ in
         let t = try validTypedArray(thisV, "%TypedArray%.prototype.at")
@@ -889,7 +889,7 @@ func installTypedArrays(_ r: object.Realm) {
         }
         return .object(a)
     }
-    func findMethod(_ name: string, fromEnd: bool, wantIndex: bool) {
+    func findMethod(name: string, fromEnd: bool, wantIndex: bool) {
         r.Method(tap, name, 1) { thisV, args, _ in
             let t = try validTypedArray(thisV, "%TypedArray%.prototype.\(name)")
             let f = try callback(object.Arg(args, 0))
@@ -921,7 +921,7 @@ func installTypedArrays(_ r: object.Realm) {
         }
         return .undefined
     }
-    func searchMethod(_ name: string) {
+    func searchMethod(name: string) {
         r.Method(tap, name, 1) { thisV, args, _ in
             let t = try validTypedArray(thisV, "%TypedArray%.prototype.\(name)")
             let len = t.Length
@@ -1000,7 +1000,7 @@ func installTypedArrays(_ r: object.Realm) {
         }
         return .object(a)
     }
-    func reduceMethod(_ name: string, right: bool) {
+    func reduceMethod(name: string, right: bool) {
         r.Method(tap, name, 1) { thisV, args, _ in
             let t = try validTypedArray(thisV, "%TypedArray%.prototype.\(name)")
             let f = try callback(object.Arg(args, 0))
@@ -1111,7 +1111,7 @@ func installTypedArrays(_ r: object.Realm) {
         }
         return .object(a)
     }
-    func sortedValues(_ t: TypedArrayObject, _ cmpV: Value) throws -> [Value] {
+    func sortedValues(t: TypedArrayObject, cmpV: Value) throws -> [Value] {
         let len = t.Length
         var vals: [Value] = []
         var i = 0
@@ -1230,14 +1230,14 @@ public final class DataViewObject: object.JSObject {
     }
 }
 
-func thisView(_ v: Value, _ method: string) throws -> DataViewObject {
+func thisView(v: Value, method: string) throws -> DataViewObject {
     guard case .object(let o) = v, let d = o as? DataViewObject else {
         throw object.ThrowTypeError("Method DataView.prototype.\(method) called on incompatible receiver \(object.Describe(v))")
     }
     return d
 }
 
-func installDataView(_ r: object.Realm) {
+func installDataView(r: object.Realm) {
     let dvp = object.JSObject(proto: r.ObjectPrototype)
     r.Intrinsics["DataViewPrototype"] = dvp
     let ctor = r.Constructor("DataView", 1, prototype: dvp) { _, args, nt in
@@ -1323,13 +1323,13 @@ final class Waiter {
 
 var waiters: [Waiter] = []
 
-func installAtomics(_ r: object.Realm) {
+func installAtomics(r: object.Realm) {
     let atomics = object.JSObject(proto: r.ObjectPrototype)
     r.DefineGlobal("Atomics", .object(atomics))
     atomics.DefineData(.symbol(value.SymToStringTag), .string(str.Name("Atomics")), writable: false, enumerable: false, configurable: true)
 
     /// validateIntegerTypedArray and ValidateAtomicAccess: the array and the index.
-    func access(_ taV: Value, _ indexV: Value, waitable: bool = false) throws -> (TypedArrayObject, int) {
+    func access(taV: Value, indexV: Value, waitable: bool = false) throws -> (TypedArrayObject, int) {
         let t = try validTypedArray(taV, "Atomics operation")
         if waitable {
             if t.Type != .int32 && t.Type != .bigInt64 { throw object.ThrowTypeError("[object Array] is not an int32 or BigInt64 typed array.") }
@@ -1343,7 +1343,7 @@ func installAtomics(_ r: object.Realm) {
         if i >= t.Length { throw object.ThrowRangeError("Invalid atomic access index") }
         return (t, i)
     }
-    func rmw(_ name: string, _ op: @escaping (uint64, uint64) -> uint64) {
+    func rmw(name: string, op: @escaping (uint64, uint64) -> uint64) {
         r.Method(atomics, name, 3) { _, args, _ in
             let (t, i) = try access(object.Arg(args, 0), object.Arg(args, 1))
             let v = try toElementValue(t.Type, object.Arg(args, 2))
@@ -1465,7 +1465,7 @@ func installAtomics(_ r: object.Realm) {
 let base64Chars: [uint8] = [uint8]("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".utf8)
 let hexChars: [uint8] = [uint8]("0123456789abcdef".utf8)
 
-func thisUint8Array(_ v: Value, _ method: string) throws -> TypedArrayObject {
+func thisUint8Array(v: Value, method: string) throws -> TypedArrayObject {
     guard case .object(let o) = v, let t = o as? TypedArrayObject, t.Type == .uint8 else {
         throw object.ThrowTypeError("Uint8Array.prototype.\(method) called on incompatible receiver \(object.Describe(v))")
     }
@@ -1473,7 +1473,7 @@ func thisUint8Array(_ v: Value, _ method: string) throws -> TypedArrayObject {
 }
 
 /// optionString reads a string option: its value, or dflt when undefined.
-func optionString(_ opts: Value, _ name: string, _ dflt: string, _ allowed: [string]) throws -> string {
+func optionString(opts: Value, name: string, dflt: string, allowed: [string]) throws -> string {
     guard case .object(let o) = opts else { return dflt }
     let v = try o.Get(object.Key(name), opts)
     if v.IsUndefined { return dflt }
@@ -1483,12 +1483,12 @@ func optionString(_ opts: Value, _ name: string, _ dflt: string, _ allowed: [str
     return t
 }
 
-func optionsObject(_ v: Value) throws -> Value {
+func optionsObject(v: Value) throws -> Value {
     if v.IsUndefined || v.IsObject { return v }
     throw object.ThrowTypeError("options must be an object")
 }
 
-func isAsciiSpace(_ c: uint16) -> bool {
+func isAsciiSpace(c: uint16) -> bool {
     return c == 0x09 || c == 0x0A || c == 0x0C || c == 0x0D || c == 0x20
 }
 
@@ -1498,7 +1498,7 @@ struct DecodeResult {
     var failed: bool = false
 }
 
-func base64Value(_ c: uint16) -> int {
+func base64Value(c: uint16) -> int {
     if c >= 0x41 && c <= 0x5A { return int(c - 0x41) }
     if c >= 0x61 && c <= 0x7A { return int(c - 0x61) + 26 }
     if c >= 0x30 && c <= 0x39 { return int(c - 0x30) + 52 }
@@ -1508,7 +1508,7 @@ func base64Value(_ c: uint16) -> int {
 }
 
 /// decodeChunk is DecodeBase64Chunk: nil when extra bits must be zero and are not.
-func decodeChunk(_ chunk: [int], _ strict: bool) -> [uint8]? {
+func decodeChunk(chunk: [int], strict: bool) -> [uint8]? {
     var c = chunk
     let n = c.count
     while c.count < 4 { c.append(0) }
@@ -1528,13 +1528,13 @@ func decodeChunk(_ chunk: [int], _ strict: bool) -> [uint8]? {
 }
 
 /// fromBase64 is FromBase64 (§23.3.2.1).
-func fromBase64(_ s: [uint16], url: bool, _ lastChunk: string, _ maxLength: int) -> DecodeResult {
+func fromBase64(s: [uint16], url: bool, lastChunk: string, maxLength: int) -> DecodeResult {
     var res = DecodeResult()
     if maxLength == 0 { return res }
     var chunk: [int] = []
     var index = 0
     let length = s.count
-    func skip(_ i: int) -> int {
+    func skip(i: int) -> int {
         var j = i
         while j < length && isAsciiSpace(s[j]) { j += 1 }
         return j
@@ -1612,7 +1612,7 @@ func fromBase64(_ s: [uint16], url: bool, _ lastChunk: string, _ maxLength: int)
     }
 }
 
-func hexValue(_ c: uint16) -> int {
+func hexValue(c: uint16) -> int {
     if c >= 0x30 && c <= 0x39 { return int(c - 0x30) }
     if c >= 0x61 && c <= 0x66 { return int(c - 0x61) + 10 }
     if c >= 0x41 && c <= 0x46 { return int(c - 0x41) + 10 }
@@ -1620,7 +1620,7 @@ func hexValue(_ c: uint16) -> int {
 }
 
 /// fromHex is FromHex (§23.3.2.2).
-func fromHex(_ s: [uint16], _ maxLength: int) -> DecodeResult {
+func fromHex(s: [uint16], maxLength: int) -> DecodeResult {
     var res = DecodeResult()
     if s.count % 2 != 0 {
         res.failed = true
@@ -1639,10 +1639,10 @@ func fromHex(_ s: [uint16], _ maxLength: int) -> DecodeResult {
     return res
 }
 
-func installBase64(_ r: object.Realm) {
+func installBase64(r: object.Realm) {
     let u8 = r.Intrinsics["Uint8Array"]!
     let u8p = r.Intrinsics["Uint8ArrayPrototype"]!
-    func bytesOf(_ t: TypedArrayObject) throws -> [uint8] {
+    func bytesOf(t: TypedArrayObject) throws -> [uint8] {
         if t.IsOutOfBounds { throw object.ThrowTypeError("Cannot perform the operation on a detached ArrayBuffer") }
         let len = t.Length
         return Array(t.Buffer.Data[t.ByteOffset..<(t.ByteOffset + len)])
@@ -1688,13 +1688,13 @@ func installBase64(_ r: object.Realm) {
         }
         return .string(str.JSString(out))
     }
-    func result(_ read: int, _ written: int) -> Value {
+    func result(read: int, written: int) -> Value {
         let o = object.JSObject(proto: r.ObjectPrototype)
         o.DefineData(object.Key("read"), .number(float64(read)))
         o.DefineData(object.Key("written"), .number(float64(written)))
         return .object(o)
     }
-    func newUint8(_ bytes: [uint8]) throws -> Value {
+    func newUint8(bytes: [uint8]) throws -> Value {
         let a = try allocateTypedArray(r, .uint8, u8p, bytes.count)
         var i = 0
         while i < bytes.count {
@@ -1751,7 +1751,7 @@ func installBase64(_ r: object.Realm) {
 
 // installBuffers installs ArrayBuffer, SharedArrayBuffer, the typed
 // arrays, DataView and Atomics.
-func installBuffers(_ r: object.Realm) {
+func installBuffers(r: object.Realm) {
     installArrayBuffer(r)
     installTypedArrays(r)
     installDataView(r)

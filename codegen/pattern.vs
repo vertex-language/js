@@ -8,7 +8,7 @@ import (
 extension Builder {
     /// bindPatternFromAcc binds the accumulator's value to a pattern: a
     /// declaration's (initialize) or an assignment's targets.
-    func bindPatternFromAcc(_ p: ast.Pattern, initialize: bool) throws {
+    func bindPatternFromAcc(p: ast.Pattern, initialize: bool) throws {
         switch p {
         case .identifier(let id):
             storeIdentifier(id, initialize: initialize)
@@ -36,7 +36,7 @@ extension Builder {
     }
 
     /// bindElement binds acc, applying a default for undefined.
-    func bindElement(_ el: ast.PatternElement, initialize: bool) throws {
+    func bindElement(el: ast.PatternElement, initialize: bool) throws {
         if let d = el.Default {
             let skip = newLabel()
             jump(.jumpIfNotUndefined, skip)
@@ -46,7 +46,7 @@ extension Builder {
         try bindPatternFromAcc(el.Target, initialize: initialize)
     }
 
-    func objectPattern(_ o: ast.ObjectPattern, _ v: int32, initialize: bool) throws {
+    func objectPattern(o: ast.ObjectPattern, v: int32, initialize: bool) throws {
         emit(.ldar, v)
         emit(.requireObjectCoercible)
         // With a rest, the keys taken are excluded from it.
@@ -91,7 +91,7 @@ extension Builder {
         }
     }
 
-    func arrayPattern(_ a: ast.ArrayPattern, _ v: int32, initialize: bool) throws {
+    func arrayPattern(a: ast.ArrayPattern, v: int32, initialize: bool) throws {
         emit(.ldar, v)
         let iter = temps(3)
         emit(.getIterator, iter)

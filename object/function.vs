@@ -53,13 +53,13 @@ public final class FunctionEnv {
 /// installed on the realm. The object model calls through it so it needs
 /// no knowledge of bytecode execution.
 public protocol Engine: AnyObject {
-    func CallFunction(_ f: JSFunction, _ this: Value, _ args: [Value]) throws -> Value
-    func ConstructFunction(_ f: JSFunction, _ args: [Value], _ newTarget: JSObject) throws -> Value
+    func CallFunction(f: JSFunction, this: Value, args: [Value]) throws -> Value
+    func ConstructFunction(f: JSFunction, args: [Value], newTarget: JSObject) throws -> Value
     /// IndirectEval runs eval(x) not called directly: global scope.
-    func IndirectEval(_ realm: Realm, _ source: str.JSString) throws -> Value
+    func IndirectEval(realm: Realm, source: str.JSString) throws -> Value
     /// CreateDynamicFunction is the Function, GeneratorFunction,
     /// AsyncFunction and AsyncGeneratorFunction constructors (§20.2.1.1.1).
-    func CreateDynamicFunction(_ realm: Realm, _ args: [Value], _ newTarget: JSObject?, isAsync: bool, isGenerator: bool) throws -> JSObject
+    func CreateDynamicFunction(realm: Realm, args: [Value], newTarget: JSObject?, isAsync: bool, isGenerator: bool) throws -> JSObject
     /// StackTrace describes the running frames, for Error.prototype.stack.
     func StackTrace() -> string
 }
@@ -72,7 +72,7 @@ public final class NativeFunction: JSObject {
     let constructible: bool
     public let Realm: Realm
 
-    public init(realm: Realm, name: string, length: int, constructor: bool = false, proto: JSObject? = nil, _ fn: @escaping NativeFn) {
+    public init(realm: Realm, name: string, length: int, constructor: bool = false, proto: JSObject? = nil, fn: @escaping NativeFn) {
         self.fn = fn
         self.constructible = constructor
         self.Realm = realm
@@ -82,7 +82,7 @@ public final class NativeFunction: JSObject {
         self.DefineData(keyName, .string(str.JSString.From(name)), writable: false, enumerable: false, configurable: true)
     }
 
-    public init(realm: Realm, symbolName: value.Symbol, prefix: string, length: int, _ fn: @escaping NativeFn) {
+    public init(realm: Realm, symbolName: value.Symbol, prefix: string, length: int, fn: @escaping NativeFn) {
         self.fn = fn
         self.constructible = false
         self.Realm = realm
@@ -97,14 +97,14 @@ public final class NativeFunction: JSObject {
     public override var IsCallable: bool { return true }
     public override var IsConstructor: bool { return constructible }
 
-    public override func Call(_ this: Value, _ args: [Value]) throws -> Value {
+    public override func Call(this: Value, args: [Value]) throws -> Value {
         let saved = currentRealmStorage
         currentRealmStorage = Realm
         defer { currentRealmStorage = saved }
         return try fn(this, args, nil)
     }
 
-    public override func Construct(_ args: [Value], _ newTarget: JSObject) throws -> Value {
+    public override func Construct(args: [Value], newTarget: JSObject) throws -> Value {
         let saved = currentRealmStorage
         currentRealmStorage = Realm
         defer { currentRealmStorage = saved }
@@ -162,7 +162,7 @@ public final class JSFunction: JSObject {
 
     public var IsClassConstructor: bool { return Template.IsClassConstructor }
 
-    public override func Call(_ this: Value, _ args: [Value]) throws -> Value {
+    public override func Call(this: Value, args: [Value]) throws -> Value {
         if Template.IsClassConstructor {
             let n = Template.Name.String
             throw ThrowTypeError("Class constructor \(n) cannot be invoked without 'new'")
@@ -170,7 +170,7 @@ public final class JSFunction: JSObject {
         return try Realm.Engine!.CallFunction(self, this, args)
     }
 
-    public override func Construct(_ args: [Value], _ newTarget: JSObject) throws -> Value {
+    public override func Construct(args: [Value], newTarget: JSObject) throws -> Value {
         return try Realm.Engine!.ConstructFunction(self, args, newTarget)
     }
 }
@@ -192,13 +192,13 @@ public final class BoundFunction: JSObject {
     public override var IsCallable: bool { return true }
     public override var IsConstructor: bool { return Target.IsConstructor }
 
-    public override func Call(_ this: Value, _ args: [Value]) throws -> Value {
+    public override func Call(this: Value, args: [Value]) throws -> Value {
         var all = BoundArgs
         all.append(contentsOf: args)
         return try Target.Call(BoundThis, all)
     }
 
-    public override func Construct(_ args: [Value], _ newTarget: JSObject) throws -> Value {
+    public override func Construct(args: [Value], newTarget: JSObject) throws -> Value {
         var all = BoundArgs
         all.append(contentsOf: args)
         var nt = newTarget
@@ -208,7 +208,7 @@ public final class BoundFunction: JSObject {
 }
 
 /// SetFunctionName (§10.2.9) defines a function's name property.
-public func SetFunctionName(_ f: JSObject, _ key: value.PropertyKey, prefix: string = "") {
+public func SetFunctionName(f: JSObject, key: value.PropertyKey, prefix: string = "") {
     var name: str.JSString
     switch key {
     case .symbol(let s):
@@ -231,7 +231,7 @@ public func SetFunctionName(_ f: JSObject, _ key: value.PropertyKey, prefix: str
 }
 
 /// MakeConstructor gives a function its prototype object (§10.2.5).
-public func MakeConstructor(_ f: JSObject, realm: Realm, proto: JSObject? = nil, writable: bool = true) {
+public func MakeConstructor(f: JSObject, realm: Realm, proto: JSObject? = nil, writable: bool = true) {
     let p = proto ?? JSObject(proto: realm.ObjectPrototype)
     if proto == nil {
         p.DefineData(keyConstructor, .object(f), writable: true, enumerable: false, configurable: true)

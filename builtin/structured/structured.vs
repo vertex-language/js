@@ -10,10 +10,10 @@ import (
 
 typealias Value = object.Value
 
-func key(_ s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
+func key(s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
 
 /// Install defines JSON and the buffers.
-public func Install(_ r: object.Realm) {
+public func Install(r: object.Realm) {
     installJSON(r)
     installBuffers(r)
 }
@@ -23,7 +23,7 @@ public func Install(_ r: object.Realm) {
 /// RawJSON is the object JSON.rawJSON makes: its text is written as is.
 public final class RawJSON: object.JSObject {
     public let Text: str.JSString
-    public init(_ text: str.JSString) {
+    public init(text: str.JSString) {
         self.Text = text
         super.init(proto: nil)
     }
@@ -40,13 +40,13 @@ final class Parser {
     var sources: [int: [value.PropertyKey: (str.JSString, Value)]] = [:]
     let trackSources: bool
 
-    init(_ s: str.JSString, _ r: object.Realm, trackSources: bool) {
+    init(s: str.JSString, r: object.Realm, trackSources: bool) {
         self.u = s.Units
         self.r = r
         self.trackSources = trackSources
     }
 
-    func context(_ at: int) -> string {
+    func context(at: int) -> string {
         // Line and column, both from 1, as V8 reports them.
         var line = 1
         var col = 1
@@ -58,11 +58,11 @@ final class Parser {
         return "in JSON at position \(at) (line \(line) column \(col))"
     }
 
-    func fail(_ msg: string, _ at: int) -> Error {
+    func fail(msg: string, at: int) -> Error {
         return object.ThrowSyntaxError("\(msg) \(context(at))")
     }
 
-    func unexpected(_ at: int) -> Error {
+    func unexpected(at: int) -> Error {
         if at >= u.count { return object.ThrowSyntaxError("Unexpected end of JSON input") }
         let tok = str.JSString([u[at]]).String
         let whole = str.JSString(u).String
@@ -94,7 +94,7 @@ final class Parser {
         return v
     }
 
-    func record(_ holder: object.JSObject?, _ k: value.PropertyKey?, _ start: int, _ v: Value) {
+    func record(holder: object.JSObject?, k: value.PropertyKey?, start: int, v: Value) {
         guard trackSources, let h = holder, let kk = k else { return }
         var slice: [uint16] = []
         var i = start
@@ -141,7 +141,7 @@ final class Parser {
         }
     }
 
-    func literal(_ word: string) throws {
+    func literal(word: string) throws {
         for b in word.utf8 {
             if pos >= u.count { throw object.ThrowSyntaxError("Unexpected end of JSON input") }
             if u[pos] != uint16(b) { throw unexpected(pos) }
@@ -180,7 +180,7 @@ final class Parser {
         return value.StringToNumber(str.JSString(text))
     }
 
-    func hex(_ c: uint16) -> int {
+    func hex(c: uint16) -> int {
         if c >= 0x30 && c <= 0x39 { return int(c) - 0x30 }
         if c >= 0x41 && c <= 0x46 { return int(c) - 0x37 }
         if c >= 0x61 && c <= 0x66 { return int(c) - 0x57 }
@@ -307,7 +307,7 @@ final class Parser {
 }
 
 /// internalize is InternalizeJSONProperty (§25.5.1.1).
-func internalize(_ r: object.Realm, _ p: Parser, _ holder: object.JSObject, _ name: value.PropertyKey, _ reviver: Value) throws -> Value {
+func internalize(r: object.Realm, p: Parser, holder: object.JSObject, name: value.PropertyKey, reviver: Value) throws -> Value {
     let val = try holder.Get(name, .object(holder))
     if case .object(let o) = val {
         if try object.IsArray(val) {
@@ -347,9 +347,9 @@ final class Serializer {
     var stack: [(object.JSObject, value.PropertyKey?)] = []
     var out = str.Builder()
 
-    init(_ r: object.Realm) { self.r = r }
+    init(r: object.Realm) { self.r = r }
 
-    func constructorName(_ o: object.JSObject) -> string {
+    func constructorName(o: object.JSObject) -> string {
         if let c = try? o.Get(key("constructor"), .object(o)), case .object(let co) = c,
            let n = try? co.Get(key("name"), c), case .string(let ns) = n {
             return ns.String
@@ -357,13 +357,13 @@ final class Serializer {
         return "Object"
     }
 
-    func describeKey(_ holder: object.JSObject, _ k: value.PropertyKey?) -> string {
+    func describeKey(holder: object.JSObject, k: value.PropertyKey?) -> string {
         guard let kk = k else { return "" }
         if holder is object.ArrayObject, case .index(let i) = kk { return "index \(i)" }
         return "property '\(kk.AsString.String)'"
     }
 
-    func circular(_ at: int, _ k: value.PropertyKey?, _ holder: object.JSObject) -> Error {
+    func circular(at: int, k: value.PropertyKey?, holder: object.JSObject) -> Error {
         var msg = "Converting circular structure to JSON\n    --> starting at object with constructor '\(constructorName(stack[at].0))'"
         var i = at + 1
         while i < stack.count {
@@ -376,7 +376,7 @@ final class Serializer {
 
     /// property is SerializeJSONProperty: false when the value is not
     /// serializable (undefined, a function, a symbol).
-    func property(_ holder: object.JSObject, _ k: value.PropertyKey, _ v0: Value) throws -> bool {
+    func property(holder: object.JSObject, k: value.PropertyKey, v0: Value) throws -> bool {
         var v = v0
         var isBigInt = false
         if case .bigint = v { isBigInt = true }
@@ -424,7 +424,7 @@ final class Serializer {
         return true
     }
 
-    func enter(_ o: object.JSObject, _ k: value.PropertyKey, _ holder: object.JSObject) throws {
+    func enter(o: object.JSObject, k: value.PropertyKey, holder: object.JSObject) throws {
         var i = 0
         while i < stack.count {
             if stack[i].0 === o { throw circular(i, k, holder) }
@@ -439,7 +439,7 @@ final class Serializer {
         out.Units.append(contentsOf: indent)
     }
 
-    func objectValue(_ o: object.JSObject, _ k: value.PropertyKey, _ holder: object.JSObject) throws {
+    func objectValue(o: object.JSObject, k: value.PropertyKey, holder: object.JSObject) throws {
         try enter(o, k, holder)
         let stepback = indent
         indent.append(contentsOf: gap)
@@ -474,7 +474,7 @@ final class Serializer {
         stack.removeLast()
     }
 
-    func array(_ o: object.JSObject, _ k: value.PropertyKey, _ holder: object.JSObject) throws {
+    func array(o: object.JSObject, k: value.PropertyKey, holder: object.JSObject) throws {
         try enter(o, k, holder)
         let stepback = indent
         indent.append(contentsOf: gap)
@@ -498,7 +498,7 @@ final class Serializer {
 let hexLower: [uint16] = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102]
 
 /// Quote is QuoteJSONString (§25.5.2.3).
-public func Quote(_ s: str.JSString, _ out: inout str.Builder) {
+public func Quote(s: str.JSString, out: inout str.Builder) {
     let u = s.Units
     out.AppendUnit(0x22)
     var i = 0
@@ -542,7 +542,7 @@ public func Quote(_ s: str.JSString, _ out: inout str.Builder) {
 
 /// Stringify is JSON.stringify(value, replacer, space), or nil for
 /// undefined.
-public func Stringify(_ r: object.Realm, _ v: Value, _ replacerV: Value, _ spaceV: Value) throws -> str.JSString? {
+public func Stringify(r: object.Realm, v: Value, replacerV: Value, spaceV: Value) throws -> str.JSString? {
     let s = Serializer(r)
     if case .object(let ro) = replacerV {
         if ro.IsCallable {
@@ -594,7 +594,7 @@ public func Stringify(_ r: object.Realm, _ v: Value, _ replacerV: Value, _ space
     return s.out.Build()
 }
 
-func installJSON(_ r: object.Realm) {
+func installJSON(r: object.Realm) {
     let json = object.JSObject(proto: r.ObjectPrototype)
     r.DefineGlobal("JSON", .object(json))
     json.DefineData(.symbol(value.SymToStringTag), .string(str.Name("JSON")), writable: false, enumerable: false, configurable: true)

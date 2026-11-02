@@ -20,7 +20,7 @@ enum Reference {
 extension Builder {
     /// exprNamed compiles an expression that an anonymous function or class
     /// takes its name from (NamedEvaluation, §8.4.5).
-    func exprNamed(_ e: ast.Expr, _ name: string?) throws {
+    func exprNamed(e: ast.Expr, name: string?) throws {
         if let n = name {
             switch ast.StripParens(e) {
             case .function(let f) where f.Name.isEmpty:
@@ -37,14 +37,14 @@ extension Builder {
     }
 
     /// exprToReg compiles e into a fresh temporary.
-    func exprToReg(_ e: ast.Expr) throws -> int32 {
+    func exprToReg(e: ast.Expr) throws -> int32 {
         try expr(e)
         let r = temp()
         emit(.star, r)
         return r
     }
 
-    func expr(_ e: ast.Expr) throws {
+    func expr(e: ast.Expr) throws {
         switch e {
         case .number(let n):
             loadNumber(n.Value)
@@ -165,12 +165,12 @@ extension Builder {
     }
 
     /// noteCallee records how the next call's callee reads, for errors.
-    func noteCallee(_ e: ast.Expr) {
+    func noteCallee(e: ast.Expr) {
         t.CalleeText[t.Code.count] = render(e)
     }
 
     /// render prints an expression the way V8's messages show a callee.
-    func render(_ e: ast.Expr) -> string {
+    func render(e: ast.Expr) -> string {
         switch e {
         case .identifier(let id): return id.Name
         case .thisExpr: return "this"
@@ -197,19 +197,19 @@ extension Builder {
         }
     }
 
-    func formatIndex(_ d: float64) -> string {
+    func formatIndex(d: float64) -> string {
         if d == d.rounded(.towardZero) && d >= 0 && d < 1e15 { return "\(int64(d))" }
         return "\(d)"
     }
 
-    func unicodeOf(_ s: string) -> [uint16] {
+    func unicodeOf(s: string) -> [uint16] {
         return str.JSString.From(s).Units
     }
 
     // MARK: members
 
     /// memberGet loads obj[m] into the accumulator (obj in a register).
-    func memberGet(_ m: ast.MemberExpr, _ obj: int32) throws {
+    func memberGet(m: ast.MemberExpr, obj: int32) throws {
         if m.Private {
             let name = temp()
             loadPrivateName(m.PrivateBinding, m.Name)
@@ -223,7 +223,7 @@ extension Builder {
         }
     }
 
-    func loadPrivateName(_ b: ast.Binding?, _ name: string) {
+    func loadPrivateName(b: ast.Binding?, name: string) {
         if let pb = b {
             loadBinding(pb, name: "#" + name)
         } else {
@@ -232,7 +232,7 @@ extension Builder {
     }
 
     /// superKey evaluates a super property's key into a register.
-    func superKey(_ s: ast.SuperMember) throws -> int32 {
+    func superKey(s: ast.SuperMember) throws -> int32 {
         let k = temp()
         try expr(s.Property)
         if s.Computed { emit(.toPropertyKey) }
@@ -242,7 +242,7 @@ extension Builder {
 
     // MARK: operators
 
-    func unary(_ u: ast.UnaryExpr) throws {
+    func unary(u: ast.UnaryExpr) throws {
         switch u.Op {
         case .sub:
             try expr(u.Argument)
@@ -273,7 +273,7 @@ extension Builder {
         }
     }
 
-    func deleteExpr(_ arg: ast.Expr) throws {
+    func deleteExpr(arg: ast.Expr) throws {
         let m = mark()
         defer { release(m) }
         switch ast.StripParens(arg) {
@@ -323,7 +323,7 @@ extension Builder {
         }
     }
 
-    func binaryOp(_ op: token.TokenKind) -> bytecode.Opcode {
+    func binaryOp(op: token.TokenKind) -> bytecode.Opcode {
         switch op {
         case .add: return .add
         case .sub: return .sub
@@ -363,7 +363,7 @@ extension Builder {
         }
     }
 
-    func binary(_ b: ast.BinaryExpr) throws {
+    func binary(b: ast.BinaryExpr) throws {
         let m = mark()
         let l = try exprToReg(b.Left)
         try expr(b.Right)
@@ -374,7 +374,7 @@ extension Builder {
     // MARK: assignment
 
     /// reference evaluates a simple target's object and key.
-    func reference(_ p: ast.Pattern) throws -> Reference {
+    func reference(p: ast.Pattern) throws -> Reference {
         guard case .member(let e) = p else {
             if case .identifier(let id) = p { return .identifier(id) }
             throw CompileError.syntax(message: "Invalid left-hand side in assignment", pos: 0)
@@ -405,7 +405,7 @@ extension Builder {
         }
     }
 
-    func loadReference(_ r: Reference) {
+    func loadReference(r: Reference) {
         switch r {
         case .identifier(let id): loadIdentifier(id)
         case .named(let o, let n): emit(.getNamed, o, keyConst(n))
@@ -418,7 +418,7 @@ extension Builder {
     }
 
     /// storeReference stores the accumulator, leaving it there.
-    func storeReference(_ r: Reference) {
+    func storeReference(r: Reference) {
         switch r {
         case .identifier(let id): storeIdentifier(id, initialize: false)
         case .named(let o, let n): emit(.setNamed, o, keyConst(n), t.Strict ? 1 : 0)
@@ -428,7 +428,7 @@ extension Builder {
         }
     }
 
-    func assign(_ a: ast.AssignExpr) throws {
+    func assign(a: ast.AssignExpr) throws {
         let m = mark()
         defer { release(m) }
         switch a.Target {
@@ -466,7 +466,7 @@ extension Builder {
         }
     }
 
-    func update(_ u: ast.UpdateExpr) throws {
+    func update(u: ast.UpdateExpr) throws {
         let m = mark()
         defer { release(m) }
         let ref = try reference(.member(u.Argument))
@@ -487,7 +487,7 @@ extension Builder {
     /// args compiles arguments into consecutive registers starting at a
     /// fresh block; with a spread, into an array instead. It returns
     /// (first register, count, spread array register or -1).
-    func argsToRegs(_ args: [ast.Expr], leading: int) throws -> (int32, int, int32) {
+    func argsToRegs(args: [ast.Expr], leading: int) throws -> (int32, int, int32) {
         var hasSpread = false
         for a in args { if case .spread = a { hasSpread = true } }
         if hasSpread {
@@ -515,7 +515,7 @@ extension Builder {
         return (first, args.count, -1)
     }
 
-    func call(_ c: ast.CallExpr) throws {
+    func call(c: ast.CallExpr) throws {
         let m = mark()
         defer { release(m) }
         at(c.At)
@@ -600,7 +600,7 @@ extension Builder {
         }
     }
 
-    func newExpr(_ n: ast.NewExpr) throws {
+    func newExpr(n: ast.NewExpr) throws {
         let m = mark()
         defer { release(m) }
         let f = try exprToReg(n.Callee)
@@ -614,7 +614,7 @@ extension Builder {
         }
     }
 
-    func superCall(_ c: ast.SuperCall) throws {
+    func superCall(c: ast.SuperCall) throws {
         let m = mark()
         defer { release(m) }
         let (first, count, spread) = try argsToRegs(c.Args, leading: 0)
@@ -628,7 +628,7 @@ extension Builder {
 
     // MARK: literals
 
-    func arrayLiteral(_ a: ast.ArrayLit) throws {
+    func arrayLiteral(a: ast.ArrayLit) throws {
         let m = mark()
         defer { release(m) }
         emit(.createArray)
@@ -650,7 +650,7 @@ extension Builder {
     }
 
     /// propertyKeyToReg evaluates a property key into a register.
-    func propertyKeyToReg(_ k: ast.PropertyKey) throws -> int32 {
+    func propertyKeyToReg(k: ast.PropertyKey) throws -> int32 {
         let r = temp()
         switch k {
         case .named(let n):
@@ -665,7 +665,7 @@ extension Builder {
         return r
     }
 
-    func objectLiteral(_ o: ast.ObjectLit) throws {
+    func objectLiteral(o: ast.ObjectLit) throws {
         let m = mark()
         defer { release(m) }
         emit(.createObject)
@@ -710,13 +710,13 @@ extension Builder {
         emit(.ldar, obj)
     }
 
-    func keyHint(_ k: ast.PropertyKey) -> string? {
+    func keyHint(k: ast.PropertyKey) -> string? {
         if case .named(let n) = k { return n }
         if case .privateName(let n) = k { return "#" + n }
         return nil
     }
 
-    func template(_ t: ast.TemplateLit) throws {
+    func template(t: ast.TemplateLit) throws {
         let m = mark()
         defer { release(m) }
         let acc = temp()
@@ -738,7 +738,7 @@ extension Builder {
         emit(.ldar, acc)
     }
 
-    func taggedTemplate(_ tt: ast.TaggedTemplate) throws {
+    func taggedTemplate(tt: ast.TaggedTemplate) throws {
         let m = mark()
         defer { release(m) }
         var cooked: [str.JSString?] = []
@@ -807,7 +807,7 @@ extension Builder {
         emit(.ldar, val)
     }
 
-    func yieldExpr(_ y: ast.YieldExpr) throws {
+    func yieldExpr(y: ast.YieldExpr) throws {
         let m = mark()
         defer { release(m) }
         if y.Delegate {
@@ -827,7 +827,7 @@ extension Builder {
 
     /// yieldStar is yield* (§15.5.5): delegate next, throw and return to
     /// the inner iterator until it is done.
-    func yieldStar(_ e: ast.Expr) throws {
+    func yieldStar(e: ast.Expr) throws {
         try expr(e)
         let iter = temps(3)
         emit(isAsync ? .getAsyncIterator : .getIterator, iter)

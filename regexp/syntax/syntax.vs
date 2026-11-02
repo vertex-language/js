@@ -36,7 +36,7 @@ public struct Flags: Equatable {
 
 /// ParseFlags reads flag characters; nil when one is unknown, repeated,
 /// or u and v are both given.
-public func ParseFlags(_ f: [uint16]) -> Flags? {
+public func ParseFlags(f: [uint16]) -> Flags? {
     var fl = Flags()
     for c in f {
         switch c {
@@ -72,7 +72,7 @@ public final class CharSet {
         self.Strings = strings
     }
 
-    public func Contains(_ cp: uint32) -> bool {
+    public func Contains(cp: uint32) -> bool {
         var lo = 0
         var hi = Ranges.count / 2 - 1
         while lo <= hi {
@@ -92,18 +92,18 @@ public final class CharSet {
         return CharSet(ranges: Ranges, strings: Strings)
     }
 
-    func addRange(_ lo: uint32, _ hi: uint32) {
+    func addRange(lo: uint32, hi: uint32) {
         Ranges = unionRanges(Ranges, [lo, hi])
     }
 
-    func add(_ cp: uint32) { addRange(cp, cp) }
+    func add(cp: uint32) { addRange(cp, cp) }
 
-    func addSet(_ o: CharSet) {
+    func addSet(o: CharSet) {
         Ranges = unionRanges(Ranges, o.Ranges)
         for s in o.Strings where !containsString(Strings, s) { Strings.append(s) }
     }
 
-    func addString(_ s: [uint32]) {
+    func addString(s: [uint32]) {
         if s.count == 1 {
             add(s[0])
         } else if !containsString(Strings, s) {
@@ -112,13 +112,13 @@ public final class CharSet {
     }
 }
 
-func containsString(_ list: [[uint32]], _ s: [uint32]) -> bool {
+func containsString(list: [[uint32]], s: [uint32]) -> bool {
     for x in list where x == s { return true }
     return false
 }
 
 /// normalize sorts and merges flat ranges.
-func normalize(_ r: [uint32]) -> [uint32] {
+func normalize(r: [uint32]) -> [uint32] {
     var pairs: [(uint32, uint32)] = []
     var i = 0
     while i + 1 < r.count {
@@ -138,13 +138,13 @@ func normalize(_ r: [uint32]) -> [uint32] {
     return out
 }
 
-func unionRanges(_ a: [uint32], _ b: [uint32]) -> [uint32] {
+func unionRanges(a: [uint32], b: [uint32]) -> [uint32] {
     if b.isEmpty { return a }
     if a.isEmpty { return normalize(b) }
     return normalize(a + b)
 }
 
-func complementRanges(_ a: [uint32]) -> [uint32] {
+func complementRanges(a: [uint32]) -> [uint32] {
     var out: [uint32] = []
     var next: uint32 = 0
     var i = 0
@@ -163,7 +163,7 @@ func complementRanges(_ a: [uint32]) -> [uint32] {
     return out
 }
 
-func intersectRanges(_ a: [uint32], _ b: [uint32]) -> [uint32] {
+func intersectRanges(a: [uint32], b: [uint32]) -> [uint32] {
     var out: [uint32] = []
     var i = 0
     var j = 0
@@ -179,7 +179,7 @@ func intersectRanges(_ a: [uint32], _ b: [uint32]) -> [uint32] {
     return out
 }
 
-func subtractRanges(_ a: [uint32], _ b: [uint32]) -> [uint32] {
+func subtractRanges(a: [uint32], b: [uint32]) -> [uint32] {
     return intersectRanges(a, complementRanges(b))
 }
 
@@ -224,7 +224,7 @@ public final class Node {
     /// Groups are a backreference's groups.
     public var Groups: [int] = []
 
-    public init(_ kind: NodeKind) {
+    public init(kind: NodeKind) {
         self.Kind = kind
     }
 }
@@ -256,12 +256,12 @@ public final class Pattern {
 /// SyntaxError is an invalid pattern.
 public struct SyntaxError: Error, CustomStringConvertible {
     public let Message: string
-    public init(_ m: string) { self.Message = m }
+    public init(m: string) { self.Message = m }
     public var description: string { return Message }
 }
 
 /// Parse parses a pattern's source (UTF-16) under flags.
-public func Parse(_ source: [uint16], _ flags: Flags) throws -> Pattern {
+public func Parse(source: [uint16], flags: Flags) throws -> Pattern {
     let p = Parser(source, flags)
     return try p.parse()
 }
@@ -292,7 +292,7 @@ final class Parser {
     var nameRefs: [(name: [uint16], node: Node)] = []
     var maxBackref = 0
 
-    init(_ source: [uint16], _ f: Flags) {
+    init(source: [uint16], f: Flags) {
         flags = f
         umode = f.UnicodeMode
         vmode = f.UnicodeSets
@@ -316,18 +316,18 @@ final class Parser {
         }
     }
 
-    func fail(_ msg: string) -> SyntaxError {
+    func fail(msg: string) -> SyntaxError {
         return SyntaxError(msg)
     }
 
     var atEnd: bool { return pos >= src.count }
 
-    func peek(_ k: int = 0) -> uint32 {
+    func peek(k: int = 0) -> uint32 {
         let i = pos + k
         return i < src.count ? src[i] : 0xFFFFFFFF
     }
 
-    func eat(_ c: uint32) -> bool {
+    func eat(c: uint32) -> bool {
         if pos < src.count && src[pos] == c {
             pos += 1
             return true
@@ -335,7 +335,7 @@ final class Parser {
         return false
     }
 
-    func node(_ k: NodeKind) -> Node {
+    func node(k: NodeKind) -> Node {
         let n = Node(k)
         n.IgnoreCase = ic
         n.Multiline = ml
@@ -426,7 +426,7 @@ final class Parser {
         return terms.count == 1 ? terms[0] : node(.seq(terms))
     }
 
-    func parseTerm(_ terms: inout [Node]) throws {
+    func parseTerm(terms: inout [Node]) throws {
         let c = peek()
         if c == 0x5E {
             pos += 1
@@ -527,7 +527,7 @@ final class Parser {
         return any ? v : nil
     }
 
-    func parseQuantifier(_ atom: Node, _ groupsBefore: int) throws -> Node? {
+    func parseQuantifier(atom: Node, groupsBefore: int) throws -> Node? {
         var lo = 0
         var hi = -1
         let c = peek()
@@ -624,7 +624,7 @@ final class Parser {
 
     /// differentAlternatives says two alternation paths part at some
     /// disjunction: the groups can never both participate.
-    func differentAlternatives(_ a: [int], _ b: [int]) -> bool {
+    func differentAlternatives(a: [int], b: [int]) -> bool {
         var i = 0
         while i + 1 < a.count && i + 1 < b.count {
             if a[i] != b[i] { return false }
@@ -726,7 +726,7 @@ final class Parser {
         return lead
     }
 
-    func readHex(_ n: int) -> uint32? {
+    func readHex(n: int) -> uint32? {
         var v: uint32 = 0
         var i = 0
         while i < n {
@@ -955,7 +955,7 @@ final class Parser {
         case set(CharSet)
     }
 
-    func addAtom(_ s: CharSet, _ a: ClassAtom) {
+    func addAtom(s: CharSet, a: ClassAtom) {
         switch a {
         case .char(let c): s.add(c)
         case .set(let o): s.addSet(o)
@@ -1017,13 +1017,13 @@ final class Parser {
         return acc
     }
 
-    func intersectSets(_ a: CharSet, _ b: CharSet) -> CharSet {
+    func intersectSets(a: CharSet, b: CharSet) -> CharSet {
         let r = CharSet(ranges: intersectRanges(a.Ranges, b.Ranges))
         for s in a.Strings where containsString(b.Strings, s) { r.Strings.append(s) }
         return r
     }
 
-    func subtractSets(_ a: CharSet, _ b: CharSet) -> CharSet {
+    func subtractSets(a: CharSet, b: CharSet) -> CharSet {
         let r = CharSet(ranges: subtractRanges(a.Ranges, b.Ranges))
         for s in a.Strings where !containsString(b.Strings, s) { r.Strings.append(s) }
         return r
@@ -1155,7 +1155,7 @@ final class Parser {
         return set
     }
 
-    func propertyValue(_ n: string, _ v: string) throws -> CharSet {
+    func propertyValue(n: string, v: string) throws -> CharSet {
         if n == "General_Category" || n == "gc" {
             if unicode.CategoryAbbreviation(v) != nil, let s = unicode.CategoryRanges(v) {
                 return CharSet(ranges: s.Ranges)
@@ -1169,7 +1169,7 @@ final class Parser {
         throw fail("Invalid property name")
     }
 
-    func loneProperty(_ n: string) throws -> CharSet {
+    func loneProperty(n: string) throws -> CharSet {
         if n == "Any" { return CharSet(ranges: [0, MaxCodePoint]) }
         if n == "ASCII" { return CharSet(ranges: [0, 0x7F]) }
         if n == "Assigned" {
@@ -1187,7 +1187,7 @@ final class Parser {
     /// lonePropertyOfStrings is a v-mode property of strings (§22.2.2.9.2).
     /// ZWJ and tag sequences need the UCD's emoji sequence files, which
     /// the unicode package does not have yet: they match nothing.
-    func lonePropertyOfStrings(_ n: string) -> CharSet? {
+    func lonePropertyOfStrings(n: string) -> CharSet? {
         switch n {
         case "Emoji_Keycap_Sequence":
             return keycapSequences()
@@ -1271,14 +1271,14 @@ final class Parser {
 
 // MARK: character tests
 
-func hexValue(_ c: uint32) -> int {
+func hexValue(c: uint32) -> int {
     if c >= 0x30 && c <= 0x39 { return int(c - 0x30) }
     if c >= 0x61 && c <= 0x66 { return int(c - 0x61 + 10) }
     if c >= 0x41 && c <= 0x46 { return int(c - 0x41 + 10) }
     return -1
 }
 
-func isSyntaxCharacter(_ c: uint32) -> bool {
+func isSyntaxCharacter(c: uint32) -> bool {
     switch c {
     case 0x5E, 0x24, 0x5C, 0x2E, 0x2A, 0x2B, 0x3F, 0x28, 0x29, 0x5B, 0x5D, 0x7B, 0x7D, 0x7C: return true
     default: return false
@@ -1286,14 +1286,14 @@ func isSyntaxCharacter(_ c: uint32) -> bool {
 }
 
 /// isClassSetReservedPunctuator is & - ! # % , : ; < = > @ ` ~.
-func isClassSetReservedPunctuator(_ c: uint32) -> bool {
+func isClassSetReservedPunctuator(c: uint32) -> bool {
     switch c {
     case 0x26, 0x2D, 0x21, 0x23, 0x25, 0x2C, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x40, 0x60, 0x7E: return true
     default: return false
     }
 }
 
-func toUnits(_ cps: [uint32]) -> [uint16] {
+func toUnits(cps: [uint32]) -> [uint16] {
     var out: [uint16] = []
     for c in cps {
         if c >= 0x10000 {

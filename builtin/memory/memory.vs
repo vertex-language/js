@@ -16,11 +16,11 @@ import (
 
 typealias Value = object.Value
 
-func key(_ s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
+func key(s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
 
 public final class WeakRef: object.JSObject {
     public let Target: Value
-    public init(_ t: Value, proto: object.JSObject) {
+    public init(t: Value, proto: object.JSObject) {
         self.Target = t
         super.init(proto: proto)
         self.Kind = .weakRef
@@ -30,7 +30,7 @@ public final class WeakRef: object.JSObject {
 public final class FinalizationRegistry: object.JSObject {
     public let Cleanup: Value
     public var Cells: [(target: Value, held: Value, token: Value)] = []
-    public init(_ cleanup: Value, proto: object.JSObject) {
+    public init(cleanup: Value, proto: object.JSObject) {
         self.Cleanup = cleanup
         super.init(proto: proto)
         self.Kind = .finalizationRegistry
@@ -38,7 +38,7 @@ public final class FinalizationRegistry: object.JSObject {
 }
 
 /// Install defines WeakRef and FinalizationRegistry.
-public func Install(_ r: object.Realm) {
+public func Install(r: object.Realm) {
     let wrp = object.JSObject(proto: r.ObjectPrototype)
     _ = r.Constructor("WeakRef", 1, prototype: wrp) { _, args, nt in
         guard let n = nt else { throw object.ThrowTypeError("Constructor WeakRef requires 'new'") }
@@ -61,7 +61,7 @@ public func Install(_ r: object.Realm) {
         if !cb.IsCallable { throw object.ThrowTypeError("FinalizationRegistry: cleanup must be callable") }
         return .object(FinalizationRegistry(cb, proto: try object.GetPrototypeFromConstructor(n, frp)))
     }
-    func this(_ v: Value, _ method: string) throws -> FinalizationRegistry {
+    func this(v: Value, method: string) throws -> FinalizationRegistry {
         if case .object(let o) = v, let f = o as? FinalizationRegistry { return f }
         throw object.ThrowTypeError("Method FinalizationRegistry.prototype.\(method) called on incompatible receiver \(object.Describe(v))")
     }

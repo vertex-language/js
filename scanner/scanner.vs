@@ -34,7 +34,7 @@ public final class Scanner {
     /// Errors collects lexical errors; the parser reports the first one.
     public var Errors: [ScanError] = []
 
-    public init(_ source: string) {
+    public init(source: string) {
         self.Source = source
         self.src = [uint8](source.utf8)
         // A hashbang comment is allowed only at the very start.
@@ -47,14 +47,14 @@ public final class Scanner {
 
     public func Save() -> State { return State(pos: pos, line: line, errors: Errors.count) }
 
-    public func Restore(_ s: State) {
+    public func Restore(s: State) {
         pos = s.pos
         line = s.line
         while Errors.count > s.errors { _ = Errors.removeLast() }
     }
 
     /// Slice is the source text between two byte offsets.
-    public func Slice(_ start: int, _ end: int) -> string {
+    public func Slice(start: int, end: int) -> string {
         if start >= end { return "" }
         var b: [uint8] = []
         b.reserveCapacity(end - start)
@@ -63,11 +63,11 @@ public final class Scanner {
         return string(decoding: b, as: UTF8.self)
     }
 
-    func fail(_ msg: string, _ at: int) {
+    func fail(msg: string, at: int) {
         Errors.append(.error(message: msg, pos: at))
     }
 
-    func peekByte(_ off: int) -> uint8 {
+    func peekByte(off: int) -> uint8 {
         let i = pos + off
         return i < src.count ? src[i] : 0
     }
@@ -211,11 +211,11 @@ public final class Scanner {
 
     // MARK: identifiers
 
-    func isIdentStartASCII(_ c: uint8) -> bool {
+    func isIdentStartASCII(c: uint8) -> bool {
         return (c >= 0x61 && c <= 0x7A) || (c >= 0x41 && c <= 0x5A) || c == 0x24 || c == 0x5F
     }
 
-    func isIdentPartASCII(_ c: uint8) -> bool {
+    func isIdentPartASCII(c: uint8) -> bool {
         return isIdentStartASCII(c) || (c >= 0x30 && c <= 0x39)
     }
 
@@ -249,7 +249,7 @@ public final class Scanner {
         return v
     }
 
-    func scanIdentifier(_ t: token.Token) -> token.Token {
+    func scanIdentifier(t: token.Token) -> token.Token {
         var tok = t
         let start = pos
         var escaped = false
@@ -302,7 +302,7 @@ public final class Scanner {
 
     // MARK: numbers
 
-    func scanNumber(_ t: token.Token) -> token.Token {
+    func scanNumber(t: token.Token) -> token.Token {
         var tok = t
         let start = pos
         tok.Kind = .number
@@ -419,7 +419,7 @@ public final class Scanner {
         return tok
     }
 
-    func scanDigits(_ out: inout [uint8]) {
+    func scanDigits(out: inout [uint8]) {
         var lastSep = false
         var any = false
         while pos < src.count {
@@ -453,7 +453,7 @@ public final class Scanner {
 
     /// readEscape reads an escape after the backslash into out. It returns
     /// false for a malformed one. legacy is set for an octal escape or \8 \9.
-    func readEscape(_ out: inout [uint16], _ legacy: inout bool, inTemplate: bool) -> bool {
+    func readEscape(out: inout [uint16], legacy: inout bool, inTemplate: bool) -> bool {
         let c = src[pos]
         pos += 1
         switch c {
@@ -523,7 +523,7 @@ public final class Scanner {
         return true
     }
 
-    func scanString(_ t: token.Token, quote: uint8) -> token.Token {
+    func scanString(t: token.Token, quote: uint8) -> token.Token {
         var tok = t
         let start = pos
         pos += 1
@@ -569,7 +569,7 @@ public final class Scanner {
     // MARK: templates
 
     /// scanTemplatePart scans from just after ` or } to the next ${ or `.
-    func scanTemplatePart(_ t: token.Token, head: bool) -> token.Token {
+    func scanTemplatePart(t: token.Token, head: bool) -> token.Token {
         var tok = t
         let start = pos
         var cooked: [uint16] = []
@@ -650,7 +650,7 @@ public final class Scanner {
 
     /// RescanTemplate continues a template after a substitution: t is the
     /// "}" token that closed it.
-    public func RescanTemplate(_ t: token.Token) -> token.Token {
+    public func RescanTemplate(t: token.Token) -> token.Token {
         pos = t.Pos + 1
         var tok = t
         tok.Text = ""
@@ -661,7 +661,7 @@ public final class Scanner {
 
     /// RescanRegExp scans a regular expression literal starting at the "/"
     /// or "/=" token t. Text is the pattern, Raw the flags.
-    public func RescanRegExp(_ t: token.Token) -> token.Token {
+    public func RescanRegExp(t: token.Token) -> token.Token {
         var tok = t
         pos = t.Pos + 1
         let bodyStart = pos
@@ -705,7 +705,7 @@ public final class Scanner {
 
     // MARK: punctuators
 
-    func scanPunctuator(_ t: token.Token) -> token.Token {
+    func scanPunctuator(t: token.Token) -> token.Token {
         var tok = t
         let c = src[pos]
         let c1 = peekByte(1)
@@ -817,7 +817,7 @@ public final class Scanner {
 
 /// parseDecimal converts a decimal literal's digits (no separators) to the
 /// nearest double.
-public func parseDecimal(_ text: string) -> float64 {
+public func parseDecimal(text: string) -> float64 {
     if let v = float64(text) { return v }
     return float64.nan
 }

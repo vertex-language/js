@@ -59,7 +59,7 @@ public final class PromiseObject: JSObject {
 }
 
 /// CreateResolvingFunctions (§27.2.1.3).
-public func CreateResolvingFunctions(_ p: PromiseObject) -> (Value, Value) {
+public func CreateResolvingFunctions(p: PromiseObject) -> (Value, Value) {
     let r = CurrentRealm()
     var alreadyResolved = false
     let resolve = NativeFunction(realm: r, name: "", length: 1) { _, args, _ in
@@ -78,7 +78,7 @@ public func CreateResolvingFunctions(_ p: PromiseObject) -> (Value, Value) {
 }
 
 /// ResolvePromise is the body of a promise resolve function.
-public func ResolvePromise(_ p: PromiseObject, _ resolution: Value) {
+public func ResolvePromise(p: PromiseObject, resolution: Value) {
     if case .object(let o) = resolution {
         if o === p {
             RejectPromise(p, .object(MakeError(CurrentRealm().TypeErrorPrototype, str.JSString.From("Chaining cycle detected for promise #<Promise>"))))
@@ -113,7 +113,7 @@ public func ResolvePromise(_ p: PromiseObject, _ resolution: Value) {
 }
 
 /// FulfillPromise (§27.2.1.4).
-public func FulfillPromise(_ p: PromiseObject, _ v: Value) {
+public func FulfillPromise(p: PromiseObject, v: Value) {
     if p.State != .pending { return }
     let reactions = p.FulfillReactions
     p.Result = v
@@ -124,7 +124,7 @@ public func FulfillPromise(_ p: PromiseObject, _ v: Value) {
 }
 
 /// RejectPromise (§27.2.1.7).
-public func RejectPromise(_ p: PromiseObject, _ reason: Value) {
+public func RejectPromise(p: PromiseObject, reason: Value) {
     if p.State != .pending { return }
     let reactions = p.RejectReactions
     p.Result = reason
@@ -137,7 +137,7 @@ public func RejectPromise(_ p: PromiseObject, _ reason: Value) {
     TriggerPromiseReactions(reactions, reason)
 }
 
-func TriggerPromiseReactions(_ reactions: [PromiseReaction], _ arg: Value) {
+func TriggerPromiseReactions(reactions: [PromiseReaction], arg: Value) {
     let agent = CurrentRealm().Agent
     for reaction in reactions {
         agent.Enqueue { try PromiseReactionJob(reaction, arg) }
@@ -145,7 +145,7 @@ func TriggerPromiseReactions(_ reactions: [PromiseReaction], _ arg: Value) {
 }
 
 /// PromiseReactionJob is NewPromiseReactionJob's job (§27.2.2.1).
-func PromiseReactionJob(_ reaction: PromiseReaction, _ arg: Value) throws {
+func PromiseReactionJob(reaction: PromiseReaction, arg: Value) throws {
     var result: Value = .undefined
     var threw = false
     switch reaction.Handler {
@@ -182,7 +182,7 @@ func PromiseReactionJob(_ reaction: PromiseReaction, _ arg: Value) throws {
 }
 
 /// NewPromiseCapability (§27.2.1.5).
-public func NewPromiseCapability(_ c: Value) throws -> PromiseCapability {
+public func NewPromiseCapability(c: Value) throws -> PromiseCapability {
     guard case .object(let ctor) = c, ctor.IsConstructor else {
         throw ThrowTypeError("Promise resolve or reject function is not callable")
     }
@@ -215,7 +215,7 @@ public func NewPromise() -> PromiseObject {
 }
 
 /// PromiseResolve (§27.2.4.7.1).
-public func PromiseResolve(_ c: JSObject, _ x: Value) throws -> JSObject {
+public func PromiseResolve(c: JSObject, x: Value) throws -> JSObject {
     if case .object(let xo) = x, xo is PromiseObject {
         let ctor = try xo.Get(keyConstructor, x)
         if case .object(let co) = ctor, co === c { return xo }
@@ -226,7 +226,7 @@ public func PromiseResolve(_ c: JSObject, _ x: Value) throws -> JSObject {
 }
 
 /// PerformPromiseThen (§27.2.5.4.1).
-public func PerformPromiseThen(_ p: PromiseObject, _ onFulfilled: ReactionHandler, _ onRejected: ReactionHandler, _ cap: PromiseCapability?) {
+public func PerformPromiseThen(p: PromiseObject, onFulfilled: ReactionHandler, onRejected: ReactionHandler, cap: PromiseCapability?) {
     let fr = PromiseReaction(capability: cap, isFulfill: true, handler: onFulfilled)
     let rr = PromiseReaction(capability: cap, isFulfill: false, handler: onRejected)
     let agent = CurrentRealm().Agent
@@ -248,14 +248,14 @@ public func PerformPromiseThen(_ p: PromiseObject, _ onFulfilled: ReactionHandle
 }
 
 /// HandlerFrom turns a then argument into a reaction handler.
-public func HandlerFrom(_ v: Value) -> ReactionHandler {
+public func HandlerFrom(v: Value) -> ReactionHandler {
     if case .object(let o) = v, o.IsCallable { return .function(o) }
     return .none
 }
 
 /// AwaitValue is the core of Await (§6.2.3.1): resolve v to a promise and
 /// react to it with Vertex closures.
-public func AwaitValue(_ v: Value, onFulfilled: @escaping (Value) throws -> Value, onRejected: @escaping (Value) throws -> Value) throws {
+public func AwaitValue(v: Value, onFulfilled: @escaping (Value) throws -> Value, onRejected: @escaping (Value) throws -> Value) throws {
     let r = CurrentRealm()
     let p = try PromiseResolve(r.PromiseConstructor!, v)
     guard let po = p as? PromiseObject else {

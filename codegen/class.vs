@@ -9,7 +9,7 @@ import (
 extension Builder {
     /// classDef compiles ClassDefinitionEvaluation (§15.7.14), leaving the
     /// constructor in the accumulator.
-    func classDef(_ c: ast.ClassNode, nameHint: string?) throws {
+    func classDef(c: ast.ClassNode, nameHint: string?) throws {
         let m = mark()
         defer { release(m) }
         at(c.At)
@@ -129,7 +129,7 @@ extension Builder {
     /// constructorTemplate compiles the class's constructor, or makes the
     /// default one: empty for a base class, forwarding its arguments to
     /// super for a derived one.
-    func constructorTemplate(_ c: ast.ClassNode, name: string) throws -> bytecode.FunctionTemplate {
+    func constructorTemplate(c: ast.ClassNode, name: string) throws -> bytecode.FunctionTemplate {
         if let ctor = c.Constructor {
             let t = try compileFunction(ctor, nameHint: name)
             t.Name = str.JSString.From(name)

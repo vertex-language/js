@@ -27,9 +27,9 @@ public enum Value {
     public static let False = Value.bool(false)
     public static let Zero = Value.number(0)
 
-    public static func Str(_ s: string) -> Value { return .string(str.JSString.From(s)) }
-    public static func Name(_ s: string) -> Value { return .string(str.Name(s)) }
-    public static func Int(_ i: int) -> Value { return .number(float64(i)) }
+    public static func Str(s: string) -> Value { return .string(str.JSString.From(s)) }
+    public static func Name(s: string) -> Value { return .string(str.Name(s)) }
+    public static func Int(i: int) -> Value { return .number(float64(i)) }
 
     public var IsUndefined: bool {
         if case .undefined = self { return true }
@@ -114,7 +114,7 @@ public enum Value {
 }
 
 /// SameValue (§7.2.10): NaN is itself, and +0 and -0 differ.
-public func SameValue(_ x: Value, _ y: Value) -> bool {
+public func SameValue(x: Value, y: Value) -> bool {
     if case .number(let a) = x, case .number(let b) = y {
         if a.isNaN && b.isNaN { return true }
         if a == 0 && b == 0 { return (a.sign == .minus) == (b.sign == .minus) }
@@ -124,7 +124,7 @@ public func SameValue(_ x: Value, _ y: Value) -> bool {
 }
 
 /// SameValueZero (§7.2.11): NaN is itself, and +0 equals -0.
-public func SameValueZero(_ x: Value, _ y: Value) -> bool {
+public func SameValueZero(x: Value, y: Value) -> bool {
     if case .number(let a) = x, case .number(let b) = y {
         if a.isNaN && b.isNaN { return true }
         return a == b
@@ -133,7 +133,7 @@ public func SameValueZero(_ x: Value, _ y: Value) -> bool {
 }
 
 /// StrictEquals is IsStrictlyEqual (§7.2.15), the === operator.
-public func StrictEquals(_ x: Value, _ y: Value) -> bool {
+public func StrictEquals(x: Value, y: Value) -> bool {
     switch x {
     case .undefined:
         if case .undefined = y { return true }

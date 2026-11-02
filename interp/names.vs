@@ -13,13 +13,13 @@ import (
 extension Engine {
     // MARK: globals
 
-    func notDefined(_ name: str.JSString) -> object.Completion {
+    func notDefined(name: str.JSString) -> object.Completion {
         return object.ThrowReferenceError("\(name.String) is not defined")
     }
 
     /// loadGlobal reads a name from the global lexical environment, then
     /// the global object.
-    func loadGlobal(_ r: object.Realm, _ name: str.JSString, typeofOperand: bool) throws -> Value {
+    func loadGlobal(r: object.Realm, name: str.JSString, typeofOperand: bool) throws -> Value {
         if let b = r.GlobalLexicals[name] {
             if b.Value.IsEmpty {
                 throw object.ThrowReferenceError("Cannot access '\(name.String)' before initialization")
@@ -39,7 +39,7 @@ extension Engine {
         throw notDefined(name)
     }
 
-    func storeGlobal(_ r: object.Realm, _ name: str.JSString, _ v: Value, strict: bool) throws {
+    func storeGlobal(r: object.Realm, name: str.JSString, v: Value, strict: bool) throws {
         if let b = r.GlobalLexicals[name] {
             if b.Value.IsEmpty {
                 throw object.ThrowReferenceError("Cannot access '\(name.String)' before initialization")
@@ -63,7 +63,7 @@ extension Engine {
 
     /// declareGlobals is GlobalDeclarationInstantiation (§16.1.7), and
     /// EvalDeclarationInstantiation's var part for a sloppy eval.
-    func declareGlobals(_ f: Frame, _ d: bytecode.GlobalDecls) throws {
+    func declareGlobals(f: Frame, d: bytecode.GlobalDecls) throws {
         let r = f.realm
         let g = r.Global
         if d.IsEval {
@@ -116,16 +116,16 @@ extension Engine {
 
     /// lookupName resolves a name at runtime (inside with, or after a
     /// sloppy direct eval): contexts outwards, then the globals.
-    func lookupName(_ f: Frame, _ name: str.JSString, typeofOperand: bool) throws -> Value {
+    func lookupName(f: Frame, name: str.JSString, typeofOperand: bool) throws -> Value {
         let (v, _) = try lookup(f, name, typeofOperand: typeofOperand)
         return v
     }
 
-    func lookupNameWithThis(_ f: Frame, _ name: str.JSString) throws -> (Value, Value) {
+    func lookupNameWithThis(f: Frame, name: str.JSString) throws -> (Value, Value) {
         return try lookup(f, name, typeofOperand: false)
     }
 
-    func lookup(_ f: Frame, _ name: str.JSString, typeofOperand: bool) throws -> (Value, Value) {
+    func lookup(f: Frame, name: str.JSString, typeofOperand: bool) throws -> (Value, Value) {
         let key = value.PropertyKey.FromString(name)
         var c = f.ctx
         while let ctx = c {
@@ -153,7 +153,7 @@ extension Engine {
         return (try loadGlobal(f.realm, name, typeofOperand: typeofOperand), .undefined)
     }
 
-    func unscopable(_ o: object.JSObject, _ key: value.PropertyKey) throws -> bool {
+    func unscopable(o: object.JSObject, key: value.PropertyKey) throws -> bool {
         let u = try o.Get(.symbol(value.SymUnscopables), .object(o))
         if case .object(let uo) = u {
             return try uo.Get(key, u).Truthy
@@ -161,7 +161,7 @@ extension Engine {
         return false
     }
 
-    func storeName(_ f: Frame, _ name: str.JSString, _ v: Value, strict: bool) throws {
+    func storeName(f: Frame, name: str.JSString, v: Value, strict: bool) throws {
         let key = value.PropertyKey.FromString(name)
         var c = f.ctx
         while let ctx = c {
@@ -200,7 +200,7 @@ extension Engine {
         try storeGlobal(f.realm, name, v, strict: strict)
     }
 
-    func deleteName(_ f: Frame, _ name: str.JSString) throws -> bool {
+    func deleteName(f: Frame, name: str.JSString) throws -> bool {
         let key = value.PropertyKey.FromString(name)
         var c = f.ctx
         while let ctx = c {
@@ -219,7 +219,7 @@ extension Engine {
 
     /// declareEvalVar puts a sloppy eval's var (or function) in its
     /// caller's var scope: a function context's extension, or the global object.
-    func declareEvalVar(_ f: Frame, _ name: str.JSString, _ v: Value, assign: bool) throws {
+    func declareEvalVar(f: Frame, name: str.JSString, v: Value, assign: bool) throws {
         let key = value.PropertyKey.FromString(name)
         if let vc = f.varContext {
             if let info = vc.Info {
@@ -251,7 +251,7 @@ extension Engine {
 
     // MARK: eval
 
-    func callEval(_ f: Frame, _ callee: Value, _ args: [Value]) throws -> Value {
+    func callEval(f: Frame, callee: Value, args: [Value]) throws -> Value {
         guard case .object(let o) = callee, let ev = f.realm.EvalFunction, o === ev else {
             return try callValue(f, callee, .undefined, args)
         }
@@ -262,7 +262,7 @@ extension Engine {
     }
 
     /// compileEval parses, analyzes and compiles eval code.
-    func compileEval(_ src: str.JSString, strict: bool, inFunction: bool, allowSuper: bool, allowNewTarget: bool) throws -> bytecode.FunctionTemplate {
+    func compileEval(src: str.JSString, strict: bool, inFunction: bool, allowSuper: bool, allowNewTarget: bool) throws -> bytecode.FunctionTemplate {
         var opts = parser.Options()
         opts.Strict = strict
         opts.InFunction = inFunction
@@ -283,7 +283,7 @@ extension Engine {
         }
     }
 
-    func directEval(_ f: Frame, _ src: str.JSString) throws -> Value {
+    func directEval(f: Frame, src: str.JSString) throws -> Value {
         let inFunction = f.fn != nil
         var allowSuper = false
         if let fn = activeFunction(f), fn.HomeObject != nil { allowSuper = true }
@@ -305,7 +305,7 @@ extension Engine {
         return try complete(ef)
     }
 
-    public func IndirectEval(_ realm: object.Realm, _ src: str.JSString) throws -> Value {
+    public func IndirectEval(realm: object.Realm, src: str.JSString) throws -> Value {
         let t = try compileEval(src, strict: false, inFunction: false, allowSuper: false, allowNewTarget: false)
         let ef = Frame(t: t, fn: nil, args: [], this: .object(realm.Global), newTarget: .undefined, ctx: nil, realm: realm)
         ef.isEval = true
@@ -314,7 +314,7 @@ extension Engine {
 
     // MARK: new Function
 
-    public func CreateDynamicFunction(_ realm: object.Realm, _ args: [Value], _ newTarget: object.JSObject?, isAsync: bool, isGenerator: bool) throws -> object.JSObject {
+    public func CreateDynamicFunction(realm: object.Realm, args: [Value], newTarget: object.JSObject?, isAsync: bool, isGenerator: bool) throws -> object.JSObject {
         var params = ""
         var body = ""
         if args.count > 0 {

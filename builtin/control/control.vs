@@ -13,10 +13,10 @@ import (
 
 typealias Value = object.Value
 
-func key(_ s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
+func key(s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
 
 /// Install defines the control abstraction objects.
-public func Install(_ r: object.Realm) {
+public func Install(r: object.Realm) {
     installIterator(r)
     installPromise(r)
     installFunctionKinds(r)
@@ -24,7 +24,7 @@ public func Install(_ r: object.Realm) {
 }
 
 /// thrown is the value a Completion carries, for rejecting with.
-func thrown(_ e: Error) -> Value? {
+func thrown(e: Error) -> Value? {
     if let c = e as? object.Completion { return c.Value }
     return nil
 }
@@ -41,7 +41,7 @@ public final class IteratorHelper: object.JSObject {
     public var Done: bool = false
     public var Started: bool = false
 
-    public init(_ underlying: object.IteratorRecord, proto: object.JSObject, _ step: @escaping () throws -> Value?) {
+    public init(underlying: object.IteratorRecord, proto: object.JSObject, step: @escaping () throws -> Value?) {
         self.Underlying = underlying
         self.step = step
         super.init(proto: proto)
@@ -55,26 +55,26 @@ public final class IteratorHelper: object.JSObject {
 /// WrappedIterator is Iterator.from's wrapper (§27.1.3.2.1.1).
 public final class WrappedIterator: object.JSObject {
     public let Iterated: object.IteratorRecord
-    public init(_ it: object.IteratorRecord, proto: object.JSObject) {
+    public init(it: object.IteratorRecord, proto: object.JSObject) {
         self.Iterated = it
         super.init(proto: proto)
     }
 }
 
 /// directIterator is GetIteratorDirect (§7.4.13).
-func directIterator(_ v: Value) throws -> object.IteratorRecord {
+func directIterator(v: Value) throws -> object.IteratorRecord {
     guard case .object(let o) = v else {
         throw object.ThrowTypeError("\(object.Describe(v)) is not an object")
     }
     return object.IteratorRecord(iterator: o, next: try o.Get(key("next"), v))
 }
 
-func callable(_ v: Value, _ what: string) throws -> Value {
+func callable(v: Value, what: string) throws -> Value {
     if !v.IsCallable { throw object.ThrowTypeError("\(object.Describe(v)) is not a function") }
     return v
 }
 
-func installIterator(_ r: object.Realm) {
+func installIterator(r: object.Realm) {
     let ip = r.IteratorPrototype
     r.SymbolMethod(ip, value.SymIterator, 0) { thisV, _, _ in return thisV }
     r.SymbolMethod(r.AsyncIteratorPrototype, value.SymAsyncIterator, 0) { thisV, _, _ in return thisV }
@@ -90,7 +90,7 @@ func installIterator(_ r: object.Realm) {
 
     // Iterator.prototype[@@toStringTag] and .constructor are accessors
     // (§27.1.4.14, §27.1.4.1) with SetterThatIgnoresPrototypeProperties.
-    func ignoringSetter(_ k: value.PropertyKey) -> object.NativeFn {
+    func ignoringSetter(k: value.PropertyKey) -> object.NativeFn {
         return { thisV, args, _ in
             guard case .object(let o) = thisV else { throw object.ThrowTypeError("Iterator setter called on non-object") }
             if o === r.IteratorPrototype { throw object.ThrowTypeError("Cannot assign to read only property of Iterator.prototype") }
@@ -210,13 +210,13 @@ func installIterator(_ r: object.Realm) {
     }
 
     // The helpers (§27.1.4).
-    func helperThis(_ thisV: Value) throws -> object.JSObject {
+    func helperThis(thisV: Value) throws -> object.JSObject {
         guard case .object(let o) = thisV else {
             throw object.ThrowTypeError("Iterator helper called on non-object \(object.Describe(thisV))")
         }
         return o
     }
-    func closeAndThrow(_ o: object.JSObject, _ e: Error) -> Error {
+    func closeAndThrow(o: object.JSObject, e: Error) -> Error {
         let rec = object.IteratorRecord(iterator: o, next: .undefined)
         object.IteratorCloseOnThrow(rec)
         return e
@@ -259,7 +259,7 @@ func installIterator(_ r: object.Realm) {
             }
         })
     }
-    func limit(_ o: object.JSObject, _ v: Value) throws -> float64 {
+    func limit(o: object.JSObject, v: Value) throws -> float64 {
         var n: float64 = 0
         do {
             n = try object.ToNumber(v)
@@ -379,7 +379,7 @@ func installIterator(_ r: object.Realm) {
         return .undefined
     }
     // some, every and find share a shape: stop on a verdict.
-    func searching(_ name: string, _ onHit: @escaping (Value) -> Value, _ want: bool, _ none: Value) {
+    func searching(name: string, onHit: @escaping (Value) -> Value, want: bool, none: Value) {
         r.Method(ip, name, 1) { thisV, args, _ in
             let o = try helperThis(thisV)
             let fn = object.Arg(args, 0)
@@ -409,7 +409,7 @@ func installIterator(_ r: object.Realm) {
 }
 
 /// flattenable is GetIteratorFlattenable(v, reject-strings) (§7.4.12).
-func flattenable(_ v: Value) throws -> object.IteratorRecord {
+func flattenable(v: Value) throws -> object.IteratorRecord {
     guard case .object = v else { throw object.ThrowTypeError("\(object.Describe(v)) is not an object") }
     let m = try object.GetMethod(v, .symbol(value.SymIterator))
     if m.IsUndefined { return try directIterator(v) }
@@ -425,7 +425,7 @@ final class Counter {
     var values: [Value] = []
 }
 
-func installPromise(_ r: object.Realm) {
+func installPromise(r: object.Realm) {
     let pp = r.PromisePrototype
     let ctor = r.Constructor("Promise", 1, prototype: pp) { _, args, nt in
         guard let n = nt else {
@@ -568,7 +568,7 @@ func installPromise(_ r: object.Realm) {
 }
 
 /// once is a resolve element function: it acts on its first call only.
-func once(_ r: object.Realm, _ body: @escaping (Value) throws -> Void) -> Value {
+func once(r: object.Realm, body: @escaping (Value) throws -> Void) -> Value {
     var called = false
     return .object(r.Function("", 1) { _, a, _ in
         if called { return .undefined }
@@ -581,8 +581,8 @@ func once(_ r: object.Realm, _ body: @escaping (Value) throws -> Void) -> Value 
 /// combinator installs one of Promise.all/allSettled/any/race: the shared
 /// iteration of §27.2.4.1.1 and friends, with `handlers` making the
 /// then-arguments for the element at an index.
-func combinator(_ r: object.Realm, _ ctor: object.JSObject, _ name: string,
-                _ handlers: @escaping (object.PromiseCapability, Counter, int, Value) throws -> (Value, Value)) {
+func combinator(r: object.Realm, ctor: object.JSObject, name: string,
+                handlers: @escaping (object.PromiseCapability, Counter, int, Value) throws -> (Value, Value)) {
     r.Method(ctor, name, 1) { thisV, args, _ in
         let cap = try object.NewPromiseCapability(thisV)
         guard case .object(let c) = thisV else { return .object(cap.Promise) }
@@ -622,7 +622,7 @@ func combinator(_ r: object.Realm, _ ctor: object.JSObject, _ name: string,
 
 // MARK: function kinds (§27.3, §27.4, §27.7)
 
-func installFunctionKinds(_ r: object.Realm) {
+func installFunctionKinds(r: object.Realm) {
     let gfp = r.GeneratorFunctionPrototype
     let agfp = r.AsyncGeneratorFunctionPrototype
     let afp = r.AsyncFunctionPrototype

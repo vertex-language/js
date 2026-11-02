@@ -17,7 +17,7 @@ public final class IteratorRecord {
 }
 
 /// GetIteratorFromMethod (§7.4.2).
-public func GetIteratorFromMethod(_ obj: Value, _ method: Value) throws -> IteratorRecord {
+public func GetIteratorFromMethod(obj: Value, method: Value) throws -> IteratorRecord {
     let it = try Call(method, obj, [])
     guard case .object(let io) = it else {
         throw ThrowTypeError("Result of the Symbol.iterator method is not an object")
@@ -27,7 +27,7 @@ public func GetIteratorFromMethod(_ obj: Value, _ method: Value) throws -> Itera
 }
 
 /// GetIterator (§7.4.3) for sync iteration.
-public func GetIterator(_ obj: Value) throws -> IteratorRecord {
+public func GetIterator(obj: Value) throws -> IteratorRecord {
     let m = try GetMethodForIterator(obj, .symbol(value.SymIterator))
     if m.IsUndefined {
         throw ThrowTypeError("\(DescribeIterable(obj)) is not iterable")
@@ -37,7 +37,7 @@ public func GetIterator(_ obj: Value) throws -> IteratorRecord {
 
 /// GetAsyncIterator is GetIterator(obj, async): a sync iterator is wrapped
 /// in an async-from-sync iterator.
-public func GetAsyncIterator(_ obj: Value) throws -> IteratorRecord {
+public func GetAsyncIterator(obj: Value) throws -> IteratorRecord {
     let m = try GetMethodForIterator(obj, .symbol(value.SymAsyncIterator))
     if m.IsUndefined {
         let sm = try GetMethodForIterator(obj, .symbol(value.SymIterator))
@@ -50,7 +50,7 @@ public func GetAsyncIterator(_ obj: Value) throws -> IteratorRecord {
     return try GetIteratorFromMethod(obj, m)
 }
 
-func GetMethodForIterator(_ obj: Value, _ key: value.PropertyKey) throws -> Value {
+func GetMethodForIterator(obj: Value, key: value.PropertyKey) throws -> Value {
     if obj.IsNullish || obj.IsEmpty {
         return .undefined
     }
@@ -61,7 +61,7 @@ func GetMethodForIterator(_ obj: Value, _ key: value.PropertyKey) throws -> Valu
 }
 
 /// DescribeIterable names a value in "x is not iterable" as V8 does.
-public func DescribeIterable(_ v: Value) -> string {
+public func DescribeIterable(v: Value) -> string {
     switch v {
     case .undefined, .empty: return "undefined"
     case .null: return "null"
@@ -74,7 +74,7 @@ public func DescribeIterable(_ v: Value) -> string {
 }
 
 /// IteratorNext (§7.4.4).
-public func IteratorNext(_ r: IteratorRecord, _ v: Value? = nil) throws -> JSObject {
+public func IteratorNext(r: IteratorRecord, v: Value? = nil) throws -> JSObject {
     let res = v == nil ? try Call(r.NextMethod, .object(r.Iterator), []) : try Call(r.NextMethod, .object(r.Iterator), [v!])
     guard case .object(let o) = res else {
         throw ThrowTypeError("Iterator result \(Describe(res)) is not an object")
@@ -83,17 +83,17 @@ public func IteratorNext(_ r: IteratorRecord, _ v: Value? = nil) throws -> JSObj
 }
 
 /// IteratorComplete (§7.4.5).
-public func IteratorComplete(_ o: JSObject) throws -> bool {
+public func IteratorComplete(o: JSObject) throws -> bool {
     return try o.Get(keyDone, .object(o)).Truthy
 }
 
 /// IteratorValue (§7.4.6).
-public func IteratorValue(_ o: JSObject) throws -> Value {
+public func IteratorValue(o: JSObject) throws -> Value {
     return try o.Get(keyValue, .object(o))
 }
 
 /// IteratorStepValue (§7.4.8): the next value, or nil when done.
-public func IteratorStepValue(_ r: IteratorRecord) throws -> Value? {
+public func IteratorStepValue(r: IteratorRecord) throws -> Value? {
     let res: JSObject
     do {
         res = try IteratorNext(r)
@@ -122,7 +122,7 @@ public func IteratorStepValue(_ r: IteratorRecord) throws -> Value? {
 
 /// IteratorClose (§7.4.9) for a normal completion: errors from return
 /// propagate, and a non-object result is a TypeError.
-public func IteratorClose(_ r: IteratorRecord) throws {
+public func IteratorClose(r: IteratorRecord) throws {
     let ret = try GetMethod(.object(r.Iterator), keyReturn)
     if ret.IsUndefined { return }
     let res = try Call(ret, .object(r.Iterator), [])
@@ -133,7 +133,7 @@ public func IteratorClose(_ r: IteratorRecord) throws {
 
 /// IteratorCloseOnThrow is IteratorClose for a throw completion: the
 /// original exception wins over anything return does.
-public func IteratorCloseOnThrow(_ r: IteratorRecord) {
+public func IteratorCloseOnThrow(r: IteratorRecord) {
     do {
         let ret = try GetMethod(.object(r.Iterator), keyReturn)
         if ret.IsUndefined { return }
@@ -143,7 +143,7 @@ public func IteratorCloseOnThrow(_ r: IteratorRecord) {
 }
 
 /// CreateIterResultObject (§7.4.14).
-public func CreateIterResultObject(_ v: Value, _ done: bool) -> JSObject {
+public func CreateIterResultObject(v: Value, done: bool) -> JSObject {
     let o = JSObject(proto: CurrentRealm().ObjectPrototype)
     o.DefineData(keyValue, v)
     o.DefineData(keyDone, .bool(done))
@@ -151,7 +151,7 @@ public func CreateIterResultObject(_ v: Value, _ done: bool) -> JSObject {
 }
 
 /// IterableToList (§7.4.15).
-public func IterableToList(_ items: Value) throws -> [Value] {
+public func IterableToList(items: Value) throws -> [Value] {
     // Fast path: a plain array with the built-in iterator.
     if case .object(let o) = items, let a = o as? ArrayObject, a.IsDenseSimple, isPristineArrayIteration(a) {
         var out = a.Dense
@@ -172,7 +172,7 @@ public func IterableToList(_ items: Value) throws -> [Value] {
 
 /// isPristineArrayIteration says an array iterates as the built-in array
 /// iterator would, so its elements can be read directly.
-public func isPristineArrayIteration(_ a: ArrayObject) -> bool {
+public func isPristineArrayIteration(a: ArrayObject) -> bool {
     let r = CurrentRealm()
     guard a.Proto === r.ArrayPrototype else { return false }
     if a.find(.symbol(value.SymIterator)) >= 0 { return false }
@@ -191,13 +191,13 @@ public func isPristineArrayIteration(_ a: ArrayObject) -> bool {
 /// %AsyncFromSyncIteratorPrototype%, installed by the built-ins.
 public final class AsyncFromSyncIterator: JSObject {
     public let Sync: IteratorRecord
-    public init(_ sync: IteratorRecord, proto: JSObject) {
+    public init(sync: IteratorRecord, proto: JSObject) {
         self.Sync = sync
         super.init(proto: proto)
     }
 }
 
-public func CreateAsyncFromSyncIterator(_ sync: IteratorRecord) -> IteratorRecord {
+public func CreateAsyncFromSyncIterator(sync: IteratorRecord) -> IteratorRecord {
     let r = CurrentRealm()
     let o = AsyncFromSyncIterator(sync, proto: r.AsyncFromSyncIteratorPrototype)
     let next = (try? o.Get(keyNext, .object(o))) ?? .undefined

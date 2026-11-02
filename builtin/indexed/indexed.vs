@@ -10,8 +10,8 @@ import (
 
 typealias Value = object.Value
 
-func key(_ s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
-func idx(_ i: int) -> value.PropertyKey { return value.PropertyKey.FromNumber(float64(i)) }
+func key(s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
+func idx(i: int) -> value.PropertyKey { return value.PropertyKey.FromNumber(float64(i)) }
 
 /// TypedArrayLength is set by the structured package: a typed array's
 /// length for the array iterator, which throws when it is out of bounds.
@@ -20,7 +20,7 @@ public var TypedArrayLength: ((object.JSObject) throws -> int)? = nil
 // MARK: element access
 
 /// get is Get(o, ToString(i)), reading a dense array's element directly.
-func get(_ o: object.JSObject, _ i: int) throws -> Value {
+func get(o: object.JSObject, i: int) throws -> Value {
     if let a = o as? object.ArrayObject, !a.Sparse, i < a.Dense.count {
         let v = a.Dense[i]
         if !v.IsEmpty { return v }
@@ -28,32 +28,32 @@ func get(_ o: object.JSObject, _ i: int) throws -> Value {
     return try o.Get(idx(i), .object(o))
 }
 
-func has(_ o: object.JSObject, _ i: int) throws -> bool {
+func has(o: object.JSObject, i: int) throws -> bool {
     if let a = o as? object.ArrayObject, !a.Sparse, i < a.Dense.count, !a.Dense[i].IsEmpty {
         return true
     }
     return try o.HasProperty(idx(i))
 }
 
-func set(_ o: object.JSObject, _ i: int, _ v: Value) throws {
+func set(o: object.JSObject, i: int, v: Value) throws {
     try object.SetProperty(o, idx(i), v, throwing: true)
 }
 
-func setLength(_ o: object.JSObject, _ n: int) throws {
+func setLength(o: object.JSObject, n: int) throws {
     try object.SetProperty(o, key("length"), .number(float64(n)), throwing: true)
 }
 
-func delete(_ o: object.JSObject, _ i: int) throws {
+func delete(o: object.JSObject, i: int) throws {
     try object.DeletePropertyOrThrow(o, idx(i))
 }
 
-func callable(_ v: Value) throws -> Value {
+func callable(v: Value) throws -> Value {
     if !v.IsCallable { throw object.ThrowTypeError("\(object.Describe(v)) is not a function") }
     return v
 }
 
 /// relative clamps a relative index argument into [0, len].
-func relative(_ v: Value, _ len: int, _ dflt: int) throws -> int {
+func relative(v: Value, len: int, dflt: int) throws -> int {
     if v.IsUndefined { return dflt }
     let r = try object.ToIntegerOrInfinity(v)
     if r < 0 {
@@ -63,19 +63,19 @@ func relative(_ v: Value, _ len: int, _ dflt: int) throws -> int {
     return r > float64(len) ? len : int(r)
 }
 
-func thisObject(_ v: Value) throws -> (object.JSObject, int) {
+func thisObject(v: Value) throws -> (object.JSObject, int) {
     let o = try object.ToObject(v)
     return (o, try object.LengthOfArrayLike(o))
 }
 
-func checkLength(_ n: float64) throws {
+func checkLength(n: float64) throws {
     if n > 9007199254740991 { throw object.ThrowTypeError("Invalid array length") }
 }
 
 // MARK: install
 
 /// Install defines Array and %ArrayIteratorPrototype%.
-public func Install(_ r: object.Realm) {
+public func Install(r: object.Realm) {
     let ap = r.ArrayPrototype
     let ctor = r.Constructor("Array", 1, prototype: ap) { _, args, nt in
         let proto = try object.GetPrototypeFromConstructor(nt ?? r.ArrayConstructor!, r.ArrayPrototype)
@@ -169,7 +169,7 @@ public func Install(_ r: object.Realm) {
 
 /// construct makes `new C(len)` for Array.of and Array.from, or a plain
 /// array when this is not a constructor. A len of -1 passes no argument.
-func construct(_ c: Value, _ len: int) throws -> object.JSObject {
+func construct(c: Value, len: int) throws -> object.JSObject {
     if case .object(let co) = c, co.IsConstructor {
         let args: [Value] = len < 0 ? [] : [.number(float64(len))]
         let v = try object.Construct(co, args)
@@ -181,7 +181,7 @@ func construct(_ c: Value, _ len: int) throws -> object.JSObject {
 
 // MARK: reading
 
-func installAccessors(_ r: object.Realm, _ ap: object.JSObject) {
+func installAccessors(r: object.Realm, ap: object.JSObject) {
     r.Method(ap, "at", 1) { thisV, args, _ in
         let (o, len) = try thisObject(thisV)
         let rel = try object.ToIntegerOrInfinity(object.Arg(args, 0))
@@ -259,7 +259,7 @@ func installAccessors(_ r: object.Realm, _ ap: object.JSObject) {
 /// joining is the arrays being joined, so a cycle joins as "".
 var joining: [object.JSObject] = []
 
-func join(_ o: object.JSObject, _ len: int, _ sep: str.JSString, locale: bool) throws -> str.JSString {
+func join(o: object.JSObject, len: int, sep: str.JSString, locale: bool) throws -> str.JSString {
     for j in joining where j === o { return str.JSString.Empty }
     joining.append(o)
     defer { joining.removeLast() }
@@ -282,7 +282,7 @@ func join(_ o: object.JSObject, _ len: int, _ sep: str.JSString, locale: bool) t
 
 // MARK: iteration methods
 
-func installIterationMethods(_ r: object.Realm, _ ap: object.JSObject) {
+func installIterationMethods(r: object.Realm, ap: object.JSObject) {
     r.Method(ap, "forEach", 1) { thisV, args, _ in
         let (o, len) = try thisObject(thisV)
         let cb = try callable(object.Arg(args, 0))
@@ -471,7 +471,7 @@ func installIterationMethods(_ r: object.Realm, _ ap: object.JSObject) {
 }
 
 /// flatten is FlattenIntoArray (§23.1.3.13.1).
-func flatten(_ target: object.JSObject, _ source: object.JSObject, _ len: int, _ start: int, _ depth: float64, _ mapper: Value, _ thisArg: Value) throws -> int {
+func flatten(target: object.JSObject, source: object.JSObject, len: int, start: int, depth: float64, mapper: Value, thisArg: Value) throws -> int {
     var at = start
     var k = 0
     while k < len {
@@ -498,7 +498,7 @@ func flatten(_ target: object.JSObject, _ source: object.JSObject, _ len: int, _
 
 // MARK: mutators
 
-func installMutators(_ r: object.Realm, _ ap: object.JSObject) {
+func installMutators(r: object.Realm, ap: object.JSObject) {
     r.Method(ap, "push", 1) { thisV, args, _ in
         if case .object(let o) = thisV, let a = o as? object.ArrayObject, a.IsDenseSimple, a.LengthWritable, a.Extensible, int(a.Length) + args.count < 4294967295 {
             for v in args { a.Push(v) }
@@ -691,12 +691,12 @@ func installMutators(_ r: object.Realm, _ ap: object.JSObject) {
     }
 }
 
-func hasHoles(_ a: object.ArrayObject) -> bool {
+func hasHoles(a: object.ArrayObject) -> bool {
     for v in a.Dense where v.IsEmpty { return true }
     return false
 }
 
-func collect(_ o: object.JSObject, _ len: int, skipHoles: bool) throws -> [Value] {
+func collect(o: object.JSObject, len: int, skipHoles: bool) throws -> [Value] {
     var out: [Value] = []
     var k = 0
     while k < len {
@@ -710,7 +710,7 @@ func collect(_ o: object.JSObject, _ len: int, skipHoles: bool) throws -> [Value
 
 /// sortValues is SortIndexedProperties' ordering: a stable merge sort
 /// with undefined last, as V8's TimSort orders a consistent comparator.
-public func sortValues(_ items: [Value], _ cmp: Value) throws -> [Value] {
+public func sortValues(items: [Value], cmp: Value) throws -> [Value] {
     var vals: [Value] = []
     var undefs = 0
     for v in items {
@@ -770,7 +770,7 @@ public func sortValues(_ items: [Value], _ cmp: Value) throws -> [Value] {
 
 // MARK: copying
 
-func installCopying(_ r: object.Realm, _ ap: object.JSObject) {
+func installCopying(r: object.Realm, ap: object.JSObject) {
     r.Method(ap, "concat", 1) { thisV, args, _ in
         let o = try object.ToObject(thisV)
         let a = try object.ArraySpeciesCreate(o, 0)
@@ -895,7 +895,7 @@ public final class ArrayIterator: object.JSObject {
     public var Index: int = 0
     public let Mode: IterationKind
 
-    public init(_ o: object.JSObject, _ kind: IterationKind, proto: object.JSObject) {
+    public init(o: object.JSObject, kind: IterationKind, proto: object.JSObject) {
         self.Iterated = o
         self.Mode = kind
         super.init(proto: proto)
@@ -903,11 +903,11 @@ public final class ArrayIterator: object.JSObject {
 }
 
 /// CreateArrayIterator (§23.1.5.1).
-public func CreateArrayIterator(_ r: object.Realm, _ o: object.JSObject, _ kind: IterationKind) -> ArrayIterator {
+public func CreateArrayIterator(r: object.Realm, o: object.JSObject, kind: IterationKind) -> ArrayIterator {
     return ArrayIterator(o, kind, proto: r.ArrayIteratorPrototype)
 }
 
-func installIterators(_ r: object.Realm, _ ap: object.JSObject) {
+func installIterators(r: object.Realm, ap: object.JSObject) {
     let values = r.Function("values", 0) { thisV, _, _ in
         return .object(CreateArrayIterator(r, try object.ToObject(thisV), .values))
     }
@@ -1001,7 +1001,7 @@ function (arrayConstruct, defineElement, setLength, isCallable, call, asyncItera
 }
 """
 
-func installFromAsync(_ r: object.Realm, _ ctor: object.JSObject) {
+func installFromAsync(r: object.Realm, ctor: object.JSObject) {
     let helpers: [Value] = [
         .object(r.Function("arrayConstruct", 2) { _, a, _ in
             let n = try object.ToNumber(object.Arg(a, 1))

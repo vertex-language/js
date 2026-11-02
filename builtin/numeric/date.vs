@@ -37,40 +37,40 @@ let msPerHour: float64 = 3600000
 let msPerMinute: float64 = 60000
 let msPerSecond: float64 = 1000
 
-func Day(_ t: float64) -> float64 { return math.Floor(t / msPerDay) }
-func TimeWithinDay(_ t: float64) -> float64 { return math.FloorMod(t, msPerDay) }
+func Day(t: float64) -> float64 { return math.Floor(t / msPerDay) }
+func TimeWithinDay(t: float64) -> float64 { return math.FloorMod(t, msPerDay) }
 
-func DayFromYear(_ y: float64) -> float64 {
+func DayFromYear(y: float64) -> float64 {
     return 365 * (y - 1970) + math.Floor((y - 1969) / 4) - math.Floor((y - 1901) / 100) + math.Floor((y - 1601) / 400)
 }
 
-func TimeFromYear(_ y: float64) -> float64 { return msPerDay * DayFromYear(y) }
+func TimeFromYear(y: float64) -> float64 { return msPerDay * DayFromYear(y) }
 
-func DaysInYear(_ y: float64) -> float64 {
+func DaysInYear(y: float64) -> float64 {
     if math.FloorMod(y, 4) != 0 { return 365 }
     if math.FloorMod(y, 100) != 0 { return 366 }
     if math.FloorMod(y, 400) != 0 { return 365 }
     return 366
 }
 
-func YearFromTime(_ t: float64) -> float64 {
+func YearFromTime(t: float64) -> float64 {
     var y = math.Floor(t / (msPerDay * 365.2425)) + 1970
     while TimeFromYear(y) > t { y -= 1 }
     while TimeFromYear(y + 1) <= t { y += 1 }
     return y
 }
 
-func InLeapYear(_ t: float64) -> bool { return DaysInYear(YearFromTime(t)) == 366 }
+func InLeapYear(t: float64) -> bool { return DaysInYear(YearFromTime(t)) == 366 }
 
-func DayWithinYear(_ t: float64) -> float64 { return Day(t) - DayFromYear(YearFromTime(t)) }
+func DayWithinYear(t: float64) -> float64 { return Day(t) - DayFromYear(YearFromTime(t)) }
 
 let monthStarts: [float64] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365]
 
-func monthStart(_ m: int, _ leap: bool) -> float64 {
+func monthStart(m: int, leap: bool) -> float64 {
     return monthStarts[m] + (leap && m >= 2 ? 1 : 0)
 }
 
-func MonthFromTime(_ t: float64) -> float64 {
+func MonthFromTime(t: float64) -> float64 {
     let d = DayWithinYear(t)
     let leap = InLeapYear(t)
     var m = 0
@@ -78,27 +78,27 @@ func MonthFromTime(_ t: float64) -> float64 {
     return float64(m)
 }
 
-func DateFromTime(_ t: float64) -> float64 {
+func DateFromTime(t: float64) -> float64 {
     let m = int(MonthFromTime(t))
     return DayWithinYear(t) - monthStart(m, InLeapYear(t)) + 1
 }
 
-func WeekDay(_ t: float64) -> float64 { return math.FloorMod(Day(t) + 4, 7) }
-func HourFromTime(_ t: float64) -> float64 { return math.FloorMod(math.Floor(t / msPerHour), 24) }
-func MinFromTime(_ t: float64) -> float64 { return math.FloorMod(math.Floor(t / msPerMinute), 60) }
-func SecFromTime(_ t: float64) -> float64 { return math.FloorMod(math.Floor(t / msPerSecond), 60) }
-func MsFromTime(_ t: float64) -> float64 { return math.FloorMod(t, msPerSecond) }
+func WeekDay(t: float64) -> float64 { return math.FloorMod(Day(t) + 4, 7) }
+func HourFromTime(t: float64) -> float64 { return math.FloorMod(math.Floor(t / msPerHour), 24) }
+func MinFromTime(t: float64) -> float64 { return math.FloorMod(math.Floor(t / msPerMinute), 60) }
+func SecFromTime(t: float64) -> float64 { return math.FloorMod(math.Floor(t / msPerSecond), 60) }
+func MsFromTime(t: float64) -> float64 { return math.FloorMod(t, msPerSecond) }
 
-func toInteger(_ d: float64) -> float64 { return value.ToIntegerOrInfinity(d) }
+func toInteger(d: float64) -> float64 { return value.ToIntegerOrInfinity(d) }
 
 /// MakeTime (§21.4.1.28).
-func MakeTime(_ h: float64, _ m: float64, _ s: float64, _ ms: float64) -> float64 {
+func MakeTime(h: float64, m: float64, s: float64, ms: float64) -> float64 {
     if !h.isFinite || !m.isFinite || !s.isFinite || !ms.isFinite { return float64.nan }
     return toInteger(h) * msPerHour + toInteger(m) * msPerMinute + toInteger(s) * msPerSecond + toInteger(ms)
 }
 
 /// MakeDay (§21.4.1.29).
-func MakeDay(_ year: float64, _ month: float64, _ date: float64) -> float64 {
+func MakeDay(year: float64, month: float64, date: float64) -> float64 {
     if !year.isFinite || !month.isFinite || !date.isFinite { return float64.nan }
     let y = toInteger(year)
     let m = toInteger(month)
@@ -111,7 +111,7 @@ func MakeDay(_ year: float64, _ month: float64, _ date: float64) -> float64 {
 }
 
 /// MakeDate (§21.4.1.30).
-func MakeDate(_ day: float64, _ time: float64) -> float64 {
+func MakeDate(day: float64, time: float64) -> float64 {
     if !day.isFinite || !time.isFinite { return float64.nan }
     let tv = day * msPerDay + time
     if !tv.isFinite { return float64.nan }
@@ -119,16 +119,16 @@ func MakeDate(_ day: float64, _ time: float64) -> float64 {
 }
 
 /// TimeClip (§21.4.1.31).
-func TimeClip(_ t: float64) -> float64 {
+func TimeClip(t: float64) -> float64 {
     if !t.isFinite || math.Abs(t) > 8.64e15 { return float64.nan }
     return toInteger(t) + 0
 }
 
-func LocalTime(_ t: float64) -> float64 { return t + LocalZone.Offset(t) }
+func LocalTime(t: float64) -> float64 { return t + LocalZone.Offset(t) }
 
 /// UTCFromLocal is UTC(t) (§21.4.1.26): the offset at the earlier of the
 /// candidate instants, as a repeated local time resolves.
-func UTCFromLocal(_ t: float64) -> float64 {
+func UTCFromLocal(t: float64) -> float64 {
     if !t.isFinite { return float64.nan }
     let guess = t - LocalZone.Offset(t)
     return t - LocalZone.Offset(guess)
@@ -139,25 +139,25 @@ func UTCFromLocal(_ t: float64) -> float64 {
 let dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 let monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-func pad(_ n: float64, _ width: int) -> string {
+func pad(n: float64, width: int) -> string {
     var s = "\(int64(math.Abs(n)))"
     while s.count < width { s = "0" + s }
     return s
 }
 
-func yearString(_ y: float64) -> string {
+func yearString(y: float64) -> string {
     return y < 0 ? "-" + pad(y, 6) : pad(y, 4)
 }
 
-func dateString(_ lt: float64) -> string {
+func dateString(lt: float64) -> string {
     return "\(dayNames[int(WeekDay(lt))]) \(monthNames[int(MonthFromTime(lt))]) \(pad(DateFromTime(lt), 2)) \(yearString(YearFromTime(lt)))"
 }
 
-func timeString(_ lt: float64) -> string {
+func timeString(lt: float64) -> string {
     return "\(pad(HourFromTime(lt), 2)):\(pad(MinFromTime(lt), 2)):\(pad(SecFromTime(lt), 2))"
 }
 
-func zoneString(_ tv: float64) -> string {
+func zoneString(tv: float64) -> string {
     let off = LocalZone.Offset(tv)
     let mins = math.Abs(off) / msPerMinute
     let sign = off >= 0 ? "+" : "-"
@@ -165,33 +165,33 @@ func zoneString(_ tv: float64) -> string {
 }
 
 /// DateString is ToDateString (§21.4.4.41.4): Date.prototype.toString.
-public func DateString(_ tv: float64) -> string {
+public func DateString(tv: float64) -> string {
     if tv.isNaN { return "Invalid Date" }
     let lt = LocalTime(tv)
     return "\(dateString(lt)) \(timeString(lt)) \(zoneString(tv))"
 }
 
 /// ISOString is Date.prototype.toISOString's format.
-public func ISOString(_ tv: float64) -> string {
+public func ISOString(tv: float64) -> string {
     let y = YearFromTime(tv)
     var ys = pad(y, 4)
     if y < 0 || y > 9999 { ys = (y < 0 ? "-" : "+") + pad(y, 6) }
     return "\(ys)-\(pad(MonthFromTime(tv) + 1, 2))-\(pad(DateFromTime(tv), 2))T\(timeString(tv)).\(pad(MsFromTime(tv), 3))Z"
 }
 
-func utcString(_ tv: float64) -> string {
+func utcString(tv: float64) -> string {
     return "\(dayNames[int(WeekDay(tv))]), \(pad(DateFromTime(tv), 2)) \(monthNames[int(MonthFromTime(tv))]) \(yearString(YearFromTime(tv))) \(timeString(tv)) GMT"
 }
 
 /// localeDate and localeTime are en-US's numeric forms, as ICU writes
 /// toLocaleString without options: "1/2/2024" and "3:04:05 AM".
-func localeDate(_ lt: float64) -> string {
+func localeDate(lt: float64) -> string {
     let y = YearFromTime(lt)
     let ys = y <= 0 ? "\(int64(1 - y)) BC" : "\(int64(y))"
     return "\(int(MonthFromTime(lt)) + 1)/\(int(DateFromTime(lt)))/\(ys)"
 }
 
-func localeTime(_ lt: float64) -> string {
+func localeTime(lt: float64) -> string {
     let h = int(HourFromTime(lt))
     let h12 = h % 12 == 0 ? 12 : h % 12
     return "\(h12):\(pad(MinFromTime(lt), 2)):\(pad(SecFromTime(lt), 2))\u{202F}\(h < 12 ? "AM" : "PM")"
@@ -202,16 +202,16 @@ func localeTime(_ lt: float64) -> string {
 /// Parse is Date.parse: the date time string format (§21.4.1.32), then
 /// the forms V8 also accepts -- its own toString and toUTCString output
 /// and the common "Month day, year [time]" and "year/month/day" forms.
-public func Parse(_ s: string) -> float64 {
+public func Parse(s: string) -> float64 {
     let t = parseISO(s)
     if !t.isNaN { return t }
     return parseLegacy(s)
 }
 
-func parseISO(_ s: string) -> float64 {
+func parseISO(s: string) -> float64 {
     let b = Array(s.utf8)
     var i = 0
-    func digits(_ n: int) -> float64? {
+    func digits(n: int) -> float64? {
         if i + n > b.count { return nil }
         var v: float64 = 0
         var k = 0
@@ -224,7 +224,7 @@ func parseISO(_ s: string) -> float64 {
         i += n
         return v
     }
-    func eat(_ c: uint8) -> bool {
+    func eat(c: uint8) -> bool {
         if i < b.count && b[i] == c { i += 1; return true }
         return false
     }
@@ -306,7 +306,7 @@ func parseISO(_ s: string) -> float64 {
     return TimeClip(t)
 }
 
-func parseLegacy(_ s: string) -> float64 {
+func parseLegacy(s: string) -> float64 {
     // Split into words of letters, numbers and the punctuation between.
     var words: [string] = []
     var cur = ""
@@ -428,12 +428,12 @@ func parseLegacy(_ s: string) -> float64 {
 
 // MARK: Date (§21.4)
 
-func thisTime(_ v: Value, _ method: string) throws -> float64 {
+func thisTime(v: Value, method: string) throws -> float64 {
     if case .object(let o) = v, o.Kind == .date, case .number(let t) = o.PrimitiveValue { return t }
     throw object.ThrowTypeError("this is not a Date object.")
 }
 
-func setThisTime(_ v: Value, _ t: float64) -> Value {
+func setThisTime(v: Value, t: float64) -> Value {
     if case .object(let o) = v { o.PrimitiveValue = .number(t) }
     return .number(t)
 }
@@ -442,7 +442,7 @@ func now() -> float64 {
     return float64(time.Timestamp.Now().AsUnixMilliseconds())
 }
 
-func installDate(_ r: object.Realm) {
+func installDate(r: object.Realm) {
     let dp = r.DatePrototype
     let ctor = r.Constructor("Date", 7, prototype: dp) { _, args, nt in
         guard let n = nt else { return .string(str.JSString.From(DateString(now()))) }
@@ -515,7 +515,7 @@ func installDate(_ r: object.Realm) {
     }
     for local in [true, false] {
         let p = local ? "set" : "setUTC"
-        func install(_ name: string, _ length: int, _ build: @escaping (float64, [float64], int) -> float64, nanStays: bool) {
+        func install(name: string, length: int, build: @escaping (float64, [float64], int) -> float64, nanStays: bool) {
             r.Method(dp, p + name, length) { thisV, args, _ in
                 let t = try thisTime(thisV, p + name)
                 var nums: [float64] = []
@@ -532,7 +532,7 @@ func installDate(_ r: object.Realm) {
                 return setThisTime(thisV, TimeClip(nt))
             }
         }
-        func arg(_ nums: [float64], _ i: int, _ count: int, _ dflt: float64) -> float64 {
+        func arg(nums: [float64], i: int, count: int, dflt: float64) -> float64 {
             return i < count && i < nums.count ? nums[i] : dflt
         }
         install("Milliseconds", 1, { t, n, c in
@@ -569,7 +569,7 @@ func installDate(_ r: object.Realm) {
     }
 
     // Strings.
-    func stringMethod(_ name: string, _ f: @escaping (float64) throws -> string) {
+    func stringMethod(name: string, f: @escaping (float64) throws -> string) {
         r.Method(dp, name, 0) { thisV, _, _ in
             let t = try thisTime(thisV, name)
             if t.isNaN && name != "toISOString" { return .string(str.Name("Invalid Date")) }
@@ -614,7 +614,7 @@ func installDate(_ r: object.Realm) {
 
 /// fromComponents is the Date constructor's and Date.UTC's reading of
 /// year, month[, date, hours, minutes, seconds, ms] (§21.4.2.1 step 5).
-func fromComponents(_ n: [float64]) -> float64 {
+func fromComponents(n: [float64]) -> float64 {
     var y = n[0]
     let m = n.count > 1 ? n[1] : 0
     let dt = n.count > 2 ? n[2] : 1

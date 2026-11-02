@@ -40,7 +40,7 @@ public enum Mode: Equatable {
 }
 
 /// Analyze analyzes a program and returns its top scope.
-public func Analyze(_ prog: ast.Program, mode: Mode = .script) throws -> ast.Scope {
+public func Analyze(prog: ast.Program, mode: Mode = .script) throws -> ast.Scope {
     let a = Analyzer(mode: mode)
     return try a.run(prog)
 }
@@ -66,11 +66,11 @@ final class Analyzer {
         self.mode = mode
     }
 
-    func fail(_ msg: string, _ pos: int) -> ScopeError {
+    func fail(msg: string, pos: int) -> ScopeError {
         return ScopeError.syntax(message: msg, pos: pos)
     }
 
-    func run(_ prog: ast.Program) throws -> ast.Scope {
+    func run(prog: ast.Program) throws -> ast.Scope {
         program = prog
         var kind = ast.ScopeKind.script
         switch mode {
@@ -103,7 +103,7 @@ final class Analyzer {
 
     /// isScriptTop says whether declarations here become the global
     /// object's and the global lexical environment's, not bindings.
-    func isScriptTop(_ s: ast.Scope) -> bool {
+    func isScriptTop(s: ast.Scope) -> bool {
         if s.Kind == .script { return true }
         if s.Kind == .eval, case .eval(let strict) = mode, !strict, !s.Strict {
             return false
@@ -113,14 +113,14 @@ final class Analyzer {
 
     /// sloppyEvalTop: a sloppy eval's var and function declarations go to
     /// the caller's var scope at runtime, not to bindings here.
-    func sloppyEvalTop(_ s: ast.Scope) -> bool {
+    func sloppyEvalTop(s: ast.Scope) -> bool {
         return s.Kind == .eval && !s.Strict
     }
 
     /// declareBody declares a function's or script's top-level lexical
     /// declarations and function declarations; vars are declared as the
     /// walk reaches them.
-    func declareBody(_ body: [ast.Stmt], _ s: ast.Scope, isTop: bool) throws {
+    func declareBody(body: [ast.Stmt], s: ast.Scope, isTop: bool) throws {
         for st in body {
             switch st {
             case .varDecl(let v) where v.Kind != .varKind:
@@ -154,7 +154,7 @@ final class Analyzer {
         }
     }
 
-    func declareLexicalDecl(_ v: ast.VarDecl, _ s: ast.Scope) throws {
+    func declareLexicalDecl(v: ast.VarDecl, s: ast.Scope) throws {
         var names: [string] = []
         for d in v.Declarations { ast.PatternNames(d.Target, &names) }
         for n in names {
@@ -162,7 +162,7 @@ final class Analyzer {
         }
     }
 
-    func declareLexical(_ name: string, _ kind: ast.BindingKind, _ s: ast.Scope, _ pos: int) throws {
+    func declareLexical(name: string, kind: ast.BindingKind, s: ast.Scope, pos: int) throws {
         if name.isEmpty { return }
         if s.Kind == .script {
             let prog = program!
@@ -189,7 +189,7 @@ final class Analyzer {
 
     /// declareTopFunction declares a function declaration at a function's
     /// (or script's) top level: var-like.
-    func declareTopFunction(_ f: ast.FunctionNode, _ s: ast.Scope) throws {
+    func declareTopFunction(f: ast.FunctionNode, s: ast.Scope) throws {
         if s.Kind == .script {
             let prog = program!
             if prog.LexNames.contains(f.Name) {
@@ -220,7 +220,7 @@ final class Analyzer {
 
     /// declareVar declares a var from scope `at` in its function's var
     /// scope, checking the scopes it passes for a lexical of the same name.
-    func declareVar(_ name: string, _ at: ast.Scope, _ pos: int) throws {
+    func declareVar(name: string, at: ast.Scope, pos: int) throws {
         var s: ast.Scope? = at
         while let cur = s {
             if let b = cur.Bindings[name] {
@@ -251,7 +251,7 @@ final class Analyzer {
         }
     }
 
-    func newScope(_ kind: ast.ScopeKind, _ parent: ast.Scope) -> ast.Scope {
+    func newScope(kind: ast.ScopeKind, parent: ast.Scope) -> ast.Scope {
         let s = ast.Scope(kind: kind, parent: parent)
         s.Function = kind == .function ? s : parent.Function
         s.Strict = parent.Strict
@@ -259,7 +259,7 @@ final class Analyzer {
     }
 
     /// declareBlock declares a block's lexical declarations and functions.
-    func declareBlock(_ body: [ast.Stmt], _ s: ast.Scope) throws {
+    func declareBlock(body: [ast.Stmt], s: ast.Scope) throws {
         for st in body {
             switch st {
             case .varDecl(let v) where v.Kind != .varKind:
@@ -286,7 +286,7 @@ final class Analyzer {
         }
     }
 
-    func annexBAllowed(_ name: string, _ block: ast.Scope) -> bool {
+    func annexBAllowed(name: string, block: ast.Scope) -> bool {
         var s = block.Parent
         while let cur = s {
             if let b = cur.Bindings[name] {
@@ -309,11 +309,11 @@ final class Analyzer {
 
     // MARK: walking for declarations
 
-    func walkStmts(_ body: [ast.Stmt], _ s: ast.Scope) throws {
+    func walkStmts(body: [ast.Stmt], s: ast.Scope) throws {
         for st in body { try walkStmt(st, s) }
     }
 
-    func walkStmt(_ st: ast.Stmt, _ s: ast.Scope) throws {
+    func walkStmt(st: ast.Stmt, s: ast.Scope) throws {
         switch st {
         case .varDecl(let v):
             if v.Kind == .varKind {
@@ -447,7 +447,7 @@ final class Analyzer {
         }
     }
 
-    func walkPattern(_ p: ast.Pattern, _ s: ast.Scope) throws {
+    func walkPattern(p: ast.Pattern, s: ast.Scope) throws {
         switch p {
         case .identifier:
             break
@@ -471,11 +471,11 @@ final class Analyzer {
         }
     }
 
-    func walkExprs(_ es: [ast.Expr], _ s: ast.Scope) throws {
+    func walkExprs(es: [ast.Expr], s: ast.Scope) throws {
         for e in es { try walkExpr(e, s) }
     }
 
-    func walkExpr(_ e: ast.Expr, _ s: ast.Scope) throws {
+    func walkExpr(e: ast.Expr, s: ast.Scope) throws {
         switch e {
         case .number, .bigint, .string, .regex, .boolean, .nullLit, .identifier, .thisExpr, .newTarget, .importMeta, .hole:
             break
@@ -545,7 +545,7 @@ final class Analyzer {
         }
     }
 
-    func walkFunction(_ f: ast.FunctionNode, _ outer: ast.Scope) throws {
+    func walkFunction(f: ast.FunctionNode, outer: ast.Scope) throws {
         let fs = newScope(.function, outer)
         fs.Strict = f.Strict
         f.Scope = fs
@@ -581,7 +581,7 @@ final class Analyzer {
         }
     }
 
-    func walkClass(_ c: ast.ClassNode, _ outer: ast.Scope) throws {
+    func walkClass(c: ast.ClassNode, outer: ast.Scope) throws {
         let cs = newScope(.classBody, outer)
         cs.Strict = true
         c.Scope = cs
@@ -608,7 +608,7 @@ final class Analyzer {
 
     /// lookup resolves a name from scope s: the binding, if one is found
     /// before a dynamic boundary makes the answer a runtime lookup.
-    func lookup(_ name: string, _ from: ast.Scope) -> (binding: ast.Binding?, dynamic: bool) {
+    func lookup(name: string, from: ast.Scope) -> (binding: ast.Binding?, dynamic: bool) {
         var s: ast.Scope? = from
         var crossed = false
         var dynamic = false
@@ -640,7 +640,7 @@ final class Analyzer {
         return (nil, dynamic)
     }
 
-    func functionNode(_ s: ast.Scope) -> ast.FunctionNode? {
+    func functionNode(s: ast.Scope) -> ast.FunctionNode? {
         var i = functions.count - 1
         while i >= 0 {
             if functions[i].scope === s { return functions[i].node }
@@ -649,7 +649,7 @@ final class Analyzer {
         return nil
     }
 
-    func resolveIdentifier(_ id: ast.Identifier, _ s: ast.Scope) {
+    func resolveIdentifier(id: ast.Identifier, s: ast.Scope) {
         let (b, dyn) = lookup(id.Name, s)
         id.Binding = dyn ? nil : b
         id.Dynamic = dyn
@@ -663,7 +663,7 @@ final class Analyzer {
     }
 
     /// thisUse marks the function whose this an arrow (or eval) reaches.
-    func thisUse(_ s: ast.Scope) {
+    func thisUse(s: ast.Scope) {
         var i = functions.count - 1
         while i >= 0 {
             let fr = functions[i]
@@ -681,11 +681,11 @@ final class Analyzer {
         return f.IsArrow
     }
 
-    func resolveStmts(_ body: [ast.Stmt], _ s: ast.Scope) throws {
+    func resolveStmts(body: [ast.Stmt], s: ast.Scope) throws {
         for st in body { try resolveStmt(st, s) }
     }
 
-    func resolveStmt(_ st: ast.Stmt, _ s: ast.Scope) throws {
+    func resolveStmt(st: ast.Stmt, s: ast.Scope) throws {
         switch st {
         case .varDecl(let v):
             for d in v.Declarations {
@@ -763,7 +763,7 @@ final class Analyzer {
         }
     }
 
-    func resolvePattern(_ p: ast.Pattern, _ s: ast.Scope) throws {
+    func resolvePattern(p: ast.Pattern, s: ast.Scope) throws {
         switch p {
         case .identifier(let id):
             resolveIdentifier(id, s)
@@ -787,11 +787,11 @@ final class Analyzer {
         }
     }
 
-    func resolveExprs(_ es: [ast.Expr], _ s: ast.Scope) throws {
+    func resolveExprs(es: [ast.Expr], s: ast.Scope) throws {
         for e in es { try resolveExpr(e, s) }
     }
 
-    func resolveExpr(_ e: ast.Expr, _ s: ast.Scope) throws {
+    func resolveExpr(e: ast.Expr, s: ast.Scope) throws {
         switch e {
         case .number, .bigint, .string, .regex, .boolean, .nullLit, .importMeta, .hole:
             break
@@ -879,7 +879,7 @@ final class Analyzer {
         }
     }
 
-    func resolveFunction(_ f: ast.FunctionNode) throws {
+    func resolveFunction(f: ast.FunctionNode) throws {
         let fs = f.Scope!
         functions.append(FunctionFrame(node: f, scope: fs))
         defer { _ = functions.removeLast() }
@@ -904,7 +904,7 @@ final class Analyzer {
         }
     }
 
-    func resolveClass(_ c: ast.ClassNode) throws {
+    func resolveClass(c: ast.ClassNode) throws {
         let cs = c.Scope!
         // Methods reach the private names and the class's own name through
         // the class's context.
@@ -952,17 +952,17 @@ final class Analyzer {
     // MARK: layout
 
     /// layout gives every binding its register or context slot.
-    func layout(_ top: ast.Scope) {
+    func layout(top: ast.Scope) {
         layoutFunction(top)
     }
 
-    func layoutFunction(_ fs: ast.Scope) {
+    func layoutFunction(fs: ast.Scope) {
         var regs = 0
         layoutScope(fs, &regs)
         fs.Registers = regs
     }
 
-    func layoutScope(_ s: ast.Scope, _ regs: inout int) {
+    func layoutScope(s: ast.Scope, regs: inout int) {
         var slots = 0
         for b in s.Order {
             if b.Captured || s.Kind == .module || s.HasDirectEval {

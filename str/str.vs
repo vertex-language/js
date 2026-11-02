@@ -20,7 +20,7 @@ public final class JSString: Hashable, CustomStringConvertible {
     var hashed: bool = false
     var utf8: string? = nil
 
-    public init(_ units: [uint16]) {
+    public init(units: [uint16]) {
         self.flat = units
         self.left = nil
         self.right = nil
@@ -37,7 +37,7 @@ public final class JSString: Hashable, CustomStringConvertible {
     }
 
     /// From makes a JSString from a UTF-8 string.
-    public static func From(_ s: string) -> JSString {
+    public static func From(s: string) -> JSString {
         let j = JSString(utf16.Encode(s))
         j.utf8 = s
         return j
@@ -74,20 +74,20 @@ public final class JSString: Hashable, CustomStringConvertible {
     public var IsEmpty: bool { return Length == 0 }
 
     /// At is the code unit at i, which must be in range.
-    public func At(_ i: int) -> uint16 {
+    public func At(i: int) -> uint16 {
         if !isFlat { flatten() }
         return flat[i]
     }
 
     /// CodePointAt joins a surrogate pair at i.
-    public func CodePointAt(_ i: int) -> (cp: uint32, width: int) {
+    public func CodePointAt(i: int) -> (cp: uint32, width: int) {
         if !isFlat { flatten() }
         let r = utf16.DecodeAt(flat, i)
         return (r.codePoint, r.width)
     }
 
     /// Concat joins two strings.
-    public func Concat(_ other: JSString) -> JSString {
+    public func Concat(other: JSString) -> JSString {
         if Length == 0 { return other }
         if other.Length == 0 { return self }
         if Length + other.Length < 32 {
@@ -99,7 +99,7 @@ public final class JSString: Hashable, CustomStringConvertible {
     }
 
     /// Slice is the substring [from, to).
-    public func Slice(_ from: int, _ to: int) -> JSString {
+    public func Slice(from: int, to: int) -> JSString {
         if from <= 0 && to >= Length { return self }
         if from >= to { return JSString.Empty }
         if !isFlat { flatten() }
@@ -111,7 +111,7 @@ public final class JSString: Hashable, CustomStringConvertible {
     }
 
     /// IndexOf finds needle at or after from, or returns -1.
-    public func IndexOf(_ needle: JSString, from: int) -> int {
+    public func IndexOf(needle: JSString, from: int) -> int {
         let n = needle.Length
         let h = Units
         let nd = needle.Units
@@ -129,7 +129,7 @@ public final class JSString: Hashable, CustomStringConvertible {
     }
 
     /// LastIndexOf finds needle at or before from, or returns -1.
-    public func LastIndexOf(_ needle: JSString, from: int) -> int {
+    public func LastIndexOf(needle: JSString, from: int) -> int {
         let n = needle.Length
         let h = Units
         let nd = needle.Units
@@ -144,7 +144,7 @@ public final class JSString: Hashable, CustomStringConvertible {
         return -1
     }
 
-    public func StartsWith(_ p: JSString, at: int) -> bool {
+    public func StartsWith(p: JSString, at: int) -> bool {
         if at < 0 || at + p.Length > Length { return false }
         let h = Units
         let pu = p.Units
@@ -157,7 +157,7 @@ public final class JSString: Hashable, CustomStringConvertible {
     }
 
     /// Compare orders by code units, as the < operator does.
-    public func Compare(_ other: JSString) -> int {
+    public func Compare(other: JSString) -> int {
         let a = Units
         let b = other.Units
         let n = a.count < b.count ? a.count : b.count
@@ -171,7 +171,7 @@ public final class JSString: Hashable, CustomStringConvertible {
     }
 
     /// Equals compares code units.
-    public func Equals(_ other: JSString) -> bool {
+    public func Equals(other: JSString) -> bool {
         if self === other { return true }
         if Length != other.Length { return false }
         if hashed && other.hashed && hashCache != other.hashCache { return false }
@@ -186,7 +186,7 @@ public final class JSString: Hashable, CustomStringConvertible {
     }
 
     /// EqualsASCII compares with an ASCII literal without allocating.
-    public func EqualsASCII(_ s: string) -> bool {
+    public func EqualsASCII(s: string) -> bool {
         let a = Units
         var i = 0
         for b in s.utf8 {
@@ -244,7 +244,7 @@ public final class AtomTable {
 
     public init() {}
 
-    public func Intern(_ text: string) -> JSString {
+    public func Intern(text: string) -> JSString {
         if let existing = table[text] {
             return existing
         }
@@ -259,7 +259,7 @@ public final class AtomTable {
 public let Atoms = AtomTable()
 
 /// Name interns a UTF-8 name.
-public func Name(_ s: string) -> JSString {
+public func Name(s: string) -> JSString {
     return Atoms.Intern(s)
 }
 
@@ -269,23 +269,23 @@ public struct Builder {
 
     public init() {}
 
-    public mutating func Append(_ s: JSString) {
+    public mutating func Append(s: JSString) {
         Units.append(contentsOf: s.Units)
     }
 
-    public mutating func AppendASCII(_ s: string) {
+    public mutating func AppendASCII(s: string) {
         for b in s.utf8 { Units.append(uint16(b)) }
     }
 
-    public mutating func AppendString(_ s: string) {
+    public mutating func AppendString(s: string) {
         Units.append(contentsOf: utf16.Encode(s))
     }
 
-    public mutating func AppendUnit(_ u: uint16) {
+    public mutating func AppendUnit(u: uint16) {
         Units.append(u)
     }
 
-    public mutating func AppendCodePoint(_ cp: uint32) {
+    public mutating func AppendCodePoint(cp: uint32) {
         utf16.Append(&Units, cp)
     }
 

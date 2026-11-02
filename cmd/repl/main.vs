@@ -11,7 +11,7 @@ import (
 
 /// show prints a value as a console would: strings quoted, the rest by
 /// their string conversion or description.
-func show(_ v: object.Value) -> string {
+func show(v: object.Value) -> string {
     switch v {
     case .string(let s):
         return "'" + s.String + "'"

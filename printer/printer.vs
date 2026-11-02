@@ -6,7 +6,7 @@ import (
 )
 
 /// Print renders an AST Program as JavaScript source text.
-public func Print(_ program: ast.Program) -> string {
+public func Print(program: ast.Program) -> string {
     var p = Printer()
     for s in program.Body {
         p.printStmt(s)
@@ -15,14 +15,14 @@ public func Print(_ program: ast.Program) -> string {
 }
 
 /// PrintStmt renders an individual statement as source text.
-public func PrintStmt(_ stmt: ast.Stmt) -> string {
+public func PrintStmt(stmt: ast.Stmt) -> string {
     var p = Printer()
     p.printStmt(stmt)
     return p.output
 }
 
 /// PrintExpr renders an expression as source text.
-public func PrintExpr(_ expr: ast.Expr) -> string {
+public func PrintExpr(expr: ast.Expr) -> string {
     var p = Printer()
     p.printExpr(expr)
     return p.output
@@ -38,7 +38,7 @@ struct Printer {
         }
     }
 
-    mutating func printStmt(_ stmt: ast.Stmt) {
+    mutating func printStmt(stmt: ast.Stmt) {
         switch stmt {
         case .empty:
             indent()
@@ -334,7 +334,7 @@ struct Printer {
         }
     }
 
-    mutating func printExpr(_ expr: ast.Expr) {
+    mutating func printExpr(expr: ast.Expr) {
         switch expr {
         case .identifier(let id):
             output += id.Name
@@ -588,7 +588,7 @@ struct Printer {
         }
     }
 
-    mutating func printDestructureTarget(_ target: ast.DestructureTarget) {
+    mutating func printDestructureTarget(target: ast.DestructureTarget) {
         switch target {
         case .identifier(let name):
             output += name
@@ -599,7 +599,7 @@ struct Printer {
         }
     }
 
-    mutating func printPattern(_ p: ast.BindingPattern) {
+    mutating func printPattern(p: ast.BindingPattern) {
         switch p {
         case .array(let arr):
             output += "["
@@ -646,7 +646,7 @@ struct Printer {
         }
     }
 
-    func opString(_ kind: token.TokenKind) -> string {
+    func opString(kind: token.TokenKind) -> string {
         switch kind {
         case .add: return "+"
         case .sub: return "-"
@@ -691,7 +691,7 @@ struct Printer {
         }
     }
 
-    func escapeString(_ s: string) -> string {
+    func escapeString(s: string) -> string {
         var res = ""
         for b in [uint8](s.utf8) {
             switch b {

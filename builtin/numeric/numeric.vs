@@ -13,10 +13,10 @@ import (
 
 typealias Value = object.Value
 
-func key(_ s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
+func key(s: string) -> value.PropertyKey { return value.PropertyKey.Named(s) }
 
 /// Install defines Number, BigInt, Math and Date.
-public func Install(_ r: object.Realm) {
+public func Install(r: object.Realm) {
     installNumber(r)
     installBigInt(r)
     installMath(r)
@@ -25,13 +25,13 @@ public func Install(_ r: object.Realm) {
 
 // MARK: Number (§21.1)
 
-func thisNumber(_ v: Value, _ method: string) throws -> float64 {
+func thisNumber(v: Value, method: string) throws -> float64 {
     if case .number(let d) = v { return d }
     if case .object(let o) = v, o.Kind == .number, case .number(let d) = o.PrimitiveValue { return d }
     throw object.ThrowTypeError("Number.prototype.\(method) requires that 'this' be a Number")
 }
 
-func installNumber(_ r: object.Realm) {
+func installNumber(r: object.Realm) {
     let np = r.NumberPrototype
     np.Kind = .number
     np.PrimitiveValue = .number(0)
@@ -124,7 +124,7 @@ func installNumber(_ r: object.Realm) {
 
 /// LocaleString is toLocaleString in en-US: grouped thousands and at
 /// most three fraction digits, as ICU formats it.
-public func LocaleString(_ x: float64) -> string {
+public func LocaleString(x: float64) -> string {
     if x.isNaN { return "NaN" }
     if x.isInfinite { return x < 0 ? "-∞" : "∞" }
     let neg = x < 0
@@ -151,13 +151,13 @@ public func LocaleString(_ x: float64) -> string {
 
 // MARK: BigInt (§21.2)
 
-func thisBigInt(_ v: Value, _ method: string) throws -> value.BigInt {
+func thisBigInt(v: Value, method: string) throws -> value.BigInt {
     if case .bigint(let b) = v { return b }
     if case .object(let o) = v, o.Kind == .bigint, case .bigint(let b) = o.PrimitiveValue { return b }
     throw object.ThrowTypeError("BigInt.prototype.\(method) requires that 'this' be a BigInt")
 }
 
-func installBigInt(_ r: object.Realm) {
+func installBigInt(r: object.Realm) {
     let bp = r.BigIntPrototype
     let ctor = r.Constructor("BigInt", 1, prototype: bp) { _, args, nt in
         if nt != nil { throw object.ThrowTypeError("BigInt is not a constructor") }
@@ -213,7 +213,7 @@ func installBigInt(_ r: object.Realm) {
 /// generator is Math.random's: xorshift128+, as V8's.
 var generator = rand.Xorshift128Plus(seed: uint64(bitPattern: time.Timestamp.Now().AsUnixMilliseconds()) &* 0x9E3779B97F4A7C15)
 
-func installMath(_ r: object.Realm) {
+func installMath(r: object.Realm) {
     let m = object.JSObject(proto: r.ObjectPrototype)
     r.DefineGlobal("Math", .object(m))
     let consts: [(string, float64)] = [
@@ -318,7 +318,7 @@ func installMath(_ r: object.Realm) {
 
 /// Hypot is Math.hypot as V8 computes it: scale by the largest magnitude
 /// and sum the squares with Kahan compensation.
-public func Hypot(_ xs: [float64]) -> float64 {
+public func Hypot(xs: [float64]) -> float64 {
     var maxv: float64 = 0
     var sawNaN = false
     for x in xs {
@@ -343,7 +343,7 @@ public func Hypot(_ xs: [float64]) -> float64 {
 
 /// SumPrecise is Math.sumPrecise (§21.3.2.34): the exact sum rounded once,
 /// by Shewchuk's partials.
-public func SumPrecise(_ xs: [float64]) -> float64 {
+public func SumPrecise(xs: [float64]) -> float64 {
     var partials: [float64] = []
     var special: float64 = 0
     var sawPosInf = false

@@ -50,7 +50,7 @@ struct Inst {
     /// (inside a lookbehind).
     var Back: bool = false
 
-    init(_ op: Op) {
+    init(op: Op) {
         self.Op = op
     }
 }
@@ -69,7 +69,7 @@ public final class Program {
     var anchored: bool = false
     var matcher: Matcher? = nil
 
-    init(_ p: syntax.Pattern) {
+    init(p: syntax.Pattern) {
         Pattern = p
         umode = p.Flags.UnicodeMode
     }
@@ -80,7 +80,7 @@ public final class Program {
 
     /// Compile parses and compiles a pattern; a syntax.SyntaxError for an
     /// invalid one.
-    public static func Compile(_ source: [uint16], _ flags: syntax.Flags) throws -> Program {
+    public static func Compile(source: [uint16], flags: syntax.Flags) throws -> Program {
         let pat = try syntax.Parse(source, flags)
         let p = Program(pat)
         let c = Compiler(p)
@@ -107,7 +107,7 @@ public final class Program {
     /// Exec finds the first match at or after start (only at start when
     /// sticky). The result is the captures' [start, end] pairs, -1 for
     /// one that did not participate; nil when there is no match.
-    public func Exec(_ input: [uint16], _ start: int) -> [int]? {
+    public func Exec(input: [uint16], start: int) -> [int]? {
         let m = matcher ?? Matcher(self)
         matcher = nil
         defer { matcher = m }
@@ -141,8 +141,8 @@ public final class Program {
     }
 }
 
-func isLead(_ u: uint16) -> bool { return u >= 0xD800 && u <= 0xDBFF }
-func isTrail(_ u: uint16) -> bool { return u >= 0xDC00 && u <= 0xDFFF }
+func isLead(u: uint16) -> bool { return u >= 0xD800 && u <= 0xDBFF }
+func isTrail(u: uint16) -> bool { return u >= 0xDC00 && u <= 0xDFFF }
 
 // MARK: the compiler
 
@@ -150,19 +150,19 @@ final class Compiler {
     let p: Program
     var nextReg = 0
 
-    init(_ p: Program) {
+    init(p: Program) {
         self.p = p
     }
 
     @discardableResult
-    func emit(_ i: Inst) -> int {
+    func emit(i: Inst) -> int {
         p.code.append(i)
         return p.code.count - 1
     }
 
     var here: int { return p.code.count }
 
-    func compile(_ n: syntax.Node, back: bool) {
+    func compile(n: syntax.Node, back: bool) {
         switch n.Kind {
         case .empty:
             break
@@ -232,7 +232,7 @@ final class Compiler {
     }
 
     /// compileAlternatives emits count alternatives, each tried in turn.
-    func compileAlternatives(_ count: int, _ back: bool, _ body: (int) -> Void) {
+    func compileAlternatives(count: int, back: bool, body: (int) -> Void) {
         var jumps: [int] = []
         var k = 0
         while k < count {
@@ -250,7 +250,7 @@ final class Compiler {
         for j in jumps { p.code[j].A = here }
     }
 
-    func compileSet(_ s: syntax.CharSet, _ negated: bool, _ ic: bool, _ back: bool) {
+    func compileSet(s: syntax.CharSet, negated: bool, ic: bool, back: bool) {
         if s.Strings.isEmpty || negated {
             emitSet(s, negated, ic, back)
             return
@@ -276,7 +276,7 @@ final class Compiler {
         }
     }
 
-    func emitSet(_ s: syntax.CharSet, _ negated: bool, _ ic: bool, _ back: bool) {
+    func emitSet(s: syntax.CharSet, negated: bool, ic: bool, back: bool) {
         p.sets.append(s)
         var i = Inst(.set)
         i.A = p.sets.count - 1
@@ -288,7 +288,7 @@ final class Compiler {
 
     /// isSimple says an atom matches exactly one character and captures
     /// nothing, so a repeat of it needs no loop.
-    func isSimple(_ n: syntax.Node) -> bool {
+    func isSimple(n: syntax.Node) -> bool {
         switch n.Kind {
         case .char, .dot: return true
         case .set(let s, let negated): return s.Strings.isEmpty || negated
@@ -296,7 +296,7 @@ final class Compiler {
         }
     }
 
-    func compileRepeat(_ n: syntax.Node, _ atom: syntax.Node, _ lo: int, _ hi: int, _ greedy: bool, _ back: bool) {
+    func compileRepeat(n: syntax.Node, atom: syntax.Node, lo: int, hi: int, greedy: bool, back: bool) {
         if hi == 0 { return }
         if lo == 1 && hi == 1 {
             compile(atom, back: back)
@@ -344,7 +344,7 @@ final class Compiler {
 // MARK: case folding
 
 /// canonicalize is Canonicalize(rer, ch) (§22.2.2.7.3).
-func canonicalize(_ c: uint32, _ umode: bool) -> uint32 {
+func canonicalize(c: uint32, umode: bool) -> uint32 {
     if umode { return unicode.CaseFold(c) }
     if c < 0x80 { return c >= 0x61 && c <= 0x7A ? c - 32 : c }
     if c > 0xFFFF { return c }
@@ -418,7 +418,7 @@ func makeFoldOrbits() -> [uint32: [uint32]] {
 }
 
 /// orbit is every character that canonicalizes as c does.
-func orbit(_ c: uint32, _ umode: bool) -> [uint32] {
+func orbit(c: uint32, umode: bool) -> [uint32] {
     if umode {
         let f = unicode.CaseFold(c)
         return foldOrbits[f] ?? [c]
@@ -454,19 +454,19 @@ final class Matcher {
     var stack: [int] = []
     var sp: int = 0
 
-    init(_ p: Program) {
+    init(p: Program) {
         self.p = p
         self.code = p.code
         caps = [int](repeating: -1, count: (p.Pattern.GroupCount + 1) * 2)
         regs = [int](repeating: 0, count: p.registers)
     }
 
-    func begin(_ s: [uint16]) {
+    func begin(s: [uint16]) {
         input = s
         n = s.count
     }
 
-    func matchAt(_ start: int) -> [int]? {
+    func matchAt(start: int) -> [int]? {
         var i = 0
         while i < caps.count {
             caps[i] = -1
@@ -483,7 +483,7 @@ final class Matcher {
     // MARK: reading characters
 
     /// forward reads the character at pos: (cp, width), width 0 at the end.
-    func forward(_ pos: int) -> (uint32, int) {
+    func forward(pos: int) -> (uint32, int) {
         if pos >= n { return (0, 0) }
         let u = input[pos]
         if p.umode && isLead(u) && pos + 1 < n && isTrail(input[pos + 1]) {
@@ -493,7 +493,7 @@ final class Matcher {
     }
 
     /// backward reads the character before pos.
-    func backward(_ pos: int) -> (uint32, int) {
+    func backward(pos: int) -> (uint32, int) {
         if pos <= 0 { return (0, 0) }
         let u = input[pos - 1]
         if p.umode && isTrail(u) && pos >= 2 && isLead(input[pos - 2]) {
@@ -502,11 +502,11 @@ final class Matcher {
         return (uint32(u), 1)
     }
 
-    func isLineTerminator(_ c: uint32) -> bool {
+    func isLineTerminator(c: uint32) -> bool {
         return c == 0x0A || c == 0x0D || c == 0x2028 || c == 0x2029
     }
 
-    func isWord(_ pos: int, _ foldWord: bool) -> bool {
+    func isWord(pos: int, foldWord: bool) -> bool {
         if pos < 0 || pos >= n { return false }
         let c = uint32(input[pos])
         if isAsciiWord(c) { return true }
@@ -514,11 +514,11 @@ final class Matcher {
         return foldWord && isAsciiWord(unicode.CaseFold(c))
     }
 
-    func isAsciiWord(_ c: uint32) -> bool {
+    func isAsciiWord(c: uint32) -> bool {
         return (c >= 0x61 && c <= 0x7A) || (c >= 0x41 && c <= 0x5A) || (c >= 0x30 && c <= 0x39) || c == 0x5F
     }
 
-    func inSet(_ ins: Inst, _ c: uint32) -> bool {
+    func inSet(ins: Inst, c: uint32) -> bool {
         let s = p.sets[ins.A]
         var hit = s.Contains(c)
         if !hit && ins.C == 1 {
@@ -531,7 +531,7 @@ final class Matcher {
     }
 
     /// step matches one simple atom at pos; the new position, or -1.
-    func step(_ ins: Inst, _ pos: int) -> int {
+    func step(ins: Inst, pos: int) -> int {
         let (c, w) = ins.Back ? backward(pos) : forward(pos)
         if w == 0 { return -1 }
         var ok = false
@@ -551,7 +551,7 @@ final class Matcher {
 
     // MARK: running
 
-    func push(_ k: int, _ a: int, _ b: int, _ c: int) {
+    func push(k: int, a: int, b: int, c: int) {
         if sp + 4 > stack.count {
             stack.append(k)
             stack.append(a)
@@ -566,19 +566,19 @@ final class Matcher {
         sp += 4
     }
 
-    func setCap(_ slot: int, _ v: int) {
+    func setCap(slot: int, v: int) {
         push(kCapture, slot, caps[slot], 0)
         caps[slot] = v
     }
 
-    func setReg(_ r: int, _ v: int) {
+    func setReg(r: int, v: int) {
         push(kRegister, r, regs[r], 0)
         regs[r] = v
     }
 
     /// run matches from pc at pos until a match or succeed; its position,
     /// or -1 once every alternative above the stack's current height fails.
-    func run(_ startPC: int, _ startPos: int) -> int {
+    func run(startPC: int, startPos: int) -> int {
         let base = sp
         var pc = startPC
         var pos = startPos
@@ -789,7 +789,7 @@ final class Matcher {
 
     /// backref matches what a group captured (§22.2.2.7.2); a group that
     /// did not participate matches empty.
-    func backref(_ ins: Inst, _ pos: int) -> int {
+    func backref(ins: Inst, pos: int) -> int {
         var s = -1
         var e = -1
         for g in p.refs[ins.A] where caps[g * 2] >= 0 && caps[g * 2 + 1] >= 0 {
@@ -823,7 +823,7 @@ final class Matcher {
     }
 
     /// forwardAt reads a character at i without passing limit.
-    func forwardAt(_ i: int, _ limit: int) -> (uint32, int) {
+    func forwardAt(i: int, limit: int) -> (uint32, int) {
         if i >= limit { return (0, 0) }
         let u = input[i]
         if p.umode && isLead(u) && i + 1 < limit && isTrail(input[i + 1]) {

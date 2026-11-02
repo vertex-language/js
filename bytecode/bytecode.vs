@@ -202,7 +202,7 @@ public struct Instruction {
     public var B: int32
     public var C: int32
 
-    public init(_ op: Opcode, _ a: int32 = 0, _ b: int32 = 0, _ c: int32 = 0) {
+    public init(op: Opcode, a: int32 = 0, b: int32 = 0, c: int32 = 0) {
         self.Op = op
         self.A = a
         self.B = b
@@ -291,7 +291,7 @@ public final class ScopeInfo {
     public var IsFunctionScope: bool = false
     public init() {}
 
-    public func Find(_ name: str.JSString) -> int {
+    public func Find(name: str.JSString) -> int {
         var i = 0
         while i < Names.count {
             if Names[i].Equals(name) { return i }
@@ -377,7 +377,7 @@ public final class FunctionTemplate {
     }
 
     /// LineAt is the source line of the instruction at pc.
-    public func LineAt(_ pc: int) -> int {
+    public func LineAt(pc: int) -> int {
         var line = Line
         var i = 0
         while i + 1 < Lines.count {
@@ -408,7 +408,7 @@ public final class SourceText {
         self.Bytes = [uint8](text.utf8)
     }
 
-    public func Slice(_ start: int, _ end: int) -> string {
+    public func Slice(start: int, end: int) -> string {
         if start >= end || start < 0 { return "" }
         var b: [uint8] = []
         var i = start
@@ -418,13 +418,13 @@ public final class SourceText {
 }
 
 /// Disassemble prints a function and the functions nested in it.
-public func Disassemble(_ fn: FunctionTemplate) -> string {
+public func Disassemble(fn: FunctionTemplate) -> string {
     var out = ""
     disassemble(fn, &out)
     return out
 }
 
-func disassemble(_ fn: FunctionTemplate, _ out: inout string) {
+func disassemble(fn: FunctionTemplate, out: inout string) {
     out += "== \(fn.Name.String.isEmpty ? "<anonymous>" : fn.Name.String) (\(fn.Kind)) registers \(fn.RegisterCount), params \(fn.ParamCount)"
     if fn.FunctionScope >= 0 { out += ", context \(fn.FunctionContextSlots)" }
     out += "\n"
@@ -453,7 +453,7 @@ func disassemble(_ fn: FunctionTemplate, _ out: inout string) {
     }
 }
 
-func constString(_ fn: FunctionTemplate, _ i: int) -> string {
+func constString(fn: FunctionTemplate, i: int) -> string {
     if i < 0 || i >= fn.Constants.count { return "?" }
     switch fn.Constants[i] {
     case .number(let d): return "\(d)"

@@ -14,7 +14,7 @@ import (
 typealias Value = object.Value
 
 /// Install defines the global functions and value properties.
-public func Install(_ r: object.Realm) {
+public func Install(r: object.Realm) {
     let g = r.Global
     g.DefineData(value.PropertyKey.Named("NaN"), .number(float64.nan), writable: false, enumerable: false, configurable: false)
     g.DefineData(value.PropertyKey.Named("Infinity"), .number(float64.infinity), writable: false, enumerable: false, configurable: false)
@@ -71,7 +71,7 @@ public func Install(_ r: object.Realm) {
 let hexDigits: [uint16] = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70]
 
 /// isURIUnreserved is uriAlpha, DecimalDigit and uriMark.
-func isURIUnreserved(_ c: uint16) -> bool {
+func isURIUnreserved(c: uint16) -> bool {
     if c >= 97 && c <= 122 { return true }
     if c >= 65 && c <= 90 { return true }
     if c >= 48 && c <= 57 { return true }
@@ -81,14 +81,14 @@ func isURIUnreserved(_ c: uint16) -> bool {
     }
 }
 
-func contains(_ set: string, _ c: uint16) -> bool {
+func contains(set: string, c: uint16) -> bool {
     if c >= 128 { return false }
     for b in set.utf8 where uint16(b) == c { return true }
     return false
 }
 
 /// Encode is Encode (§19.2.6.5).
-public func Encode(_ s: str.JSString, extraUnescaped: string) throws -> str.JSString {
+public func Encode(s: str.JSString, extraUnescaped: string) throws -> str.JSString {
     let u = s.Units
     var out = str.Builder()
     var k = 0
@@ -115,14 +115,14 @@ public func Encode(_ s: str.JSString, extraUnescaped: string) throws -> str.JSSt
     return out.Build()
 }
 
-func hexValue(_ c: uint16) -> int {
+func hexValue(c: uint16) -> int {
     if c >= 48 && c <= 57 { return int(c) - 48 }
     if c >= 65 && c <= 70 { return int(c) - 55 }
     if c >= 97 && c <= 102 { return int(c) - 87 }
     return -1
 }
 
-func hexByte(_ u: [uint16], _ at: int) -> int {
+func hexByte(u: [uint16], at: int) -> int {
     if at + 2 >= u.count { return -1 }
     if u[at] != 37 { return -1 }
     let hi = hexValue(u[at + 1])
@@ -132,7 +132,7 @@ func hexByte(_ u: [uint16], _ at: int) -> int {
 }
 
 /// Decode is Decode (§19.2.6.6).
-public func Decode(_ s: str.JSString, preserve: string) throws -> str.JSString {
+public func Decode(s: str.JSString, preserve: string) throws -> str.JSString {
     let u = s.Units
     var out = str.Builder()
     var k = 0
@@ -180,7 +180,7 @@ public func Decode(_ s: str.JSString, preserve: string) throws -> str.JSString {
 // MARK: Annex B (§B.2.1)
 
 /// Escape is escape(string).
-public func Escape(_ s: str.JSString) -> str.JSString {
+public func Escape(s: str.JSString) -> str.JSString {
     var out = str.Builder()
     for c in s.Units {
         let plain = (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || contains("@*_+-./", c)
@@ -203,7 +203,7 @@ public func Escape(_ s: str.JSString) -> str.JSString {
 }
 
 /// Unescape is unescape(string).
-public func Unescape(_ s: str.JSString) -> str.JSString {
+public func Unescape(s: str.JSString) -> str.JSString {
     let u = s.Units
     var out = str.Builder()
     var k = 0

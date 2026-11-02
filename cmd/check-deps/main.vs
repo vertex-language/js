@@ -44,7 +44,7 @@ let allowed: [string: [string]] = [
     "js": ["js/"],
 ]
 
-func permits(_ list: [string], _ imp: string) -> bool {
+func permits(list: [string], imp: string) -> bool {
     for a in list {
         if a == imp { return true }
         if a.hasSuffix("/") && imp.hasPrefix(a) { return true }
@@ -52,14 +52,14 @@ func permits(_ list: [string], _ imp: string) -> bool {
     return false
 }
 
-func ruleFor(_ pkg: string) -> [string]? {
+func ruleFor(pkg: string) -> [string]? {
     if let r = allowed[pkg] { return r }
     if pkg.hasPrefix("js/builtin/") { return allowed["js/builtin/"] }
     return nil
 }
 
 /// quoted is the text between the first pair of double quotes in b.
-func quoted(_ b: [uint8]) -> string? {
+func quoted(b: [uint8]) -> string? {
     var i = 0
     while i < b.count && b[i] != 0x22 { i += 1 }
     var j = i + 1
@@ -68,7 +68,7 @@ func quoted(_ b: [uint8]) -> string? {
     return string(decoding: Array(b[(i + 1)..<j]), as: UTF8.self)
 }
 
-func startsWith(_ b: [uint8], _ p: string) -> bool {
+func startsWith(b: [uint8], p: string) -> bool {
     let q = [uint8](p.utf8)
     if b.count < q.count { return false }
     var i = 0
@@ -80,7 +80,7 @@ func startsWith(_ b: [uint8], _ p: string) -> bool {
 }
 
 /// imports reads the import paths of a source file.
-func imports(_ text: string) -> [string] {
+func imports(text: string) -> [string] {
     var out: [string] = []
     var inBlock = false
     var line: [uint8] = []
@@ -109,7 +109,7 @@ func imports(_ text: string) -> [string] {
 
 func main() -> int32 {
     var packages: [string: [string]] = [:]
-    func visit(_ dir: fs.Path, _ pkg: string) throws {
+    func visit(dir: fs.Path, pkg: string) throws {
         for e in try fs.ReadDir(dir) {
             if e.Kind == .directory {
                 if pkg == "js" && (e.Name == "cmd" || e.Name == "tests") { continue }

@@ -226,7 +226,7 @@ public struct Token {
 
 /// Precedence returns the binary operator precedence (higher binds tighter).
 /// Returns 0 for non-binary operators.
-public func Precedence(_ kind: TokenKind) -> int {
+public func Precedence(kind: TokenKind) -> int {
     switch kind {
     case .logicalOr:
         return 4
@@ -258,7 +258,7 @@ public func Precedence(_ kind: TokenKind) -> int {
 }
 
 /// LookupKeyword looks up a reserved or contextual keyword by name.
-public func LookupKeyword(_ name: string) -> TokenKind? {
+public func LookupKeyword(name: string) -> TokenKind? {
     switch name {
     case "await": return .kAwait
     case "async": return .kAsync
@@ -381,7 +381,7 @@ public final class SourceFile {
 
 /// IsWhiteSpace is WhiteSpace (§12.2): TAB, VT, FF, SP, NBSP, ZWNBSP and
 /// the Zs category.
-public func IsWhiteSpace(_ c: uint32) -> bool {
+public func IsWhiteSpace(c: uint32) -> bool {
     switch c {
     case 0x09, 0x0B, 0x0C, 0x20, 0xA0, 0xFEFF:
         return true
@@ -391,28 +391,28 @@ public func IsWhiteSpace(_ c: uint32) -> bool {
 }
 
 /// IsLineTerminator is LineTerminator (§12.3): LF, CR, LS and PS.
-public func IsLineTerminator(_ c: uint32) -> bool {
+public func IsLineTerminator(c: uint32) -> bool {
     return c == 0x0A || c == 0x0D || c == 0x2028 || c == 0x2029
 }
 
 /// IsSpace is StrWhiteSpaceChar (§7.1.4.1): WhiteSpace or LineTerminator,
 /// what String.prototype.trim removes and \s matches.
-public func IsSpace(_ c: uint32) -> bool {
+public func IsSpace(c: uint32) -> bool {
     return IsWhiteSpace(c) || IsLineTerminator(c)
 }
 
 /// IsIdentifierStart is IdentifierStartChar (§12.7): ID_Start, $ or _.
-public func IsIdentifierStart(_ c: uint32) -> bool {
+public func IsIdentifierStart(c: uint32) -> bool {
     return c == 0x24 || c == 0x5F || unicode.IsIDStart(c)
 }
 
 /// IsIdentifierPart is IdentifierPartChar (§12.7): ID_Continue, $, ZWNJ or ZWJ.
-public func IsIdentifierPart(_ c: uint32) -> bool {
+public func IsIdentifierPart(c: uint32) -> bool {
     return c == 0x24 || c == 0x200C || c == 0x200D || unicode.IsIDContinue(c)
 }
 
 /// HexValue is a HexDigit's value, or -1.
-public func HexValue(_ c: uint32) -> int {
+public func HexValue(c: uint32) -> int {
     if c >= 0x30 && c <= 0x39 { return int(c - 0x30) }
     if c >= 0x61 && c <= 0x66 { return int(c - 0x61 + 10) }
     if c >= 0x41 && c <= 0x46 { return int(c - 0x41 + 10) }

@@ -22,7 +22,7 @@ public final class Symbol: Hashable {
     /// RegistryKey is set for symbols from Symbol.for.
     public var RegistryKey: str.JSString? = nil
 
-    public init(_ description: str.JSString?, isPrivate: bool = false) {
+    public init(description: str.JSString?, isPrivate: bool = false) {
         self.Description = description
         self.IsPrivate = isPrivate
         self.ID = nextSymbolID
@@ -88,18 +88,18 @@ public enum PropertyKey: Hashable {
     }
 
     /// FromString canonicalizes a string key.
-    public static func FromString(_ s: str.JSString) -> PropertyKey {
+    public static func FromString(s: str.JSString) -> PropertyKey {
         if let i = ArrayIndex(s) { return .index(i) }
         return .string(s)
     }
 
     /// Named makes a key from a UTF-8 name, interned.
-    public static func Named(_ s: string) -> PropertyKey {
+    public static func Named(s: string) -> PropertyKey {
         return FromString(str.Name(s))
     }
 
     /// FromNumber is ToPropertyKey of a number.
-    public static func FromNumber(_ d: float64) -> PropertyKey {
+    public static func FromNumber(d: float64) -> PropertyKey {
         if d >= 0 && d < 4294967295.0 && d == d.rounded(.towardZero) {
             if d == 0 && d.sign == .minus { return .index(0) }
             return .index(uint32(d))
@@ -138,7 +138,7 @@ public enum PropertyKey: Hashable {
 
 /// ArrayIndex parses a canonical array index: "0" or digits without a
 /// leading zero, below 2^32 - 1.
-public func ArrayIndex(_ s: str.JSString) -> uint32? {
+public func ArrayIndex(s: str.JSString) -> uint32? {
     let n = s.Length
     if n == 0 || n > 10 { return nil }
     let u = s.Units

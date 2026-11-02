@@ -30,7 +30,7 @@ import (
 public struct Exception: Error, CustomStringConvertible {
     public let Value: object.Value
 
-    public init(_ v: object.Value) {
+    public init(v: object.Value) {
         self.Value = v
     }
 
@@ -107,7 +107,7 @@ public final class Runtime {
 
     /// Compile parses and compiles a script without running it; a syntax
     /// error is thrown as the SyntaxError object a script would see.
-    public func Compile(_ source: string, filename: string = "<eval>") throws -> bytecode.FunctionTemplate {
+    public func Compile(source: string, filename: string = "<eval>") throws -> bytecode.FunctionTemplate {
         do {
             do {
                 let prog = try parser.ParseScript(source, filename: filename)
@@ -127,7 +127,7 @@ public final class Runtime {
 
     /// Evaluate runs a script and returns its completion value. It does
     /// not run the jobs the script queued; RunJobs does.
-    public func Evaluate(_ source: string, filename: string = "<eval>") throws -> object.Value {
+    public func Evaluate(source: string, filename: string = "<eval>") throws -> object.Value {
         let t = try Compile(source, filename: filename)
         object.SetCurrentRealm(Realm)
         do {
@@ -147,7 +147,7 @@ public final class Runtime {
     public var HasJobs: bool { return Agent.HasJobs }
 
     /// Call calls a function value, turning a throw into an Exception.
-    public func Call(_ f: object.Value, this: object.Value = .undefined, _ args: [object.Value]) throws -> object.Value {
+    public func Call(f: object.Value, this: object.Value = .undefined, args: [object.Value]) throws -> object.Value {
         object.SetCurrentRealm(Realm)
         do {
             return try object.Call(f, this, args)
@@ -158,19 +158,19 @@ public final class Runtime {
 
     /// Define makes a global property, as a host's globals are made:
     /// writable, configurable, and not enumerable.
-    public func Define(_ name: string, _ v: object.Value) {
+    public func Define(name: string, v: object.Value) {
         Realm.DefineGlobal(name, v)
     }
 
     /// Function makes a built-in function the host implements.
-    public func Function(_ name: string, _ length: int, _ fn: @escaping object.NativeFn) -> object.NativeFunction {
+    public func Function(name: string, length: int, fn: @escaping object.NativeFn) -> object.NativeFunction {
         return Realm.Function(name, length, fn)
     }
 
     /// DefineConsole defines a console whose log, info, warn, error and
     /// debug join their arguments' strings with spaces and hand the line
     /// to write. A host decides where it goes: a terminal, a devtools pane.
-    public func DefineConsole(_ write: @escaping (string) -> Void) {
+    public func DefineConsole(write: @escaping (string) -> Void) {
         let console = object.JSObject(proto: Realm.ObjectPrototype)
         for name in ["log", "info", "warn", "error", "debug"] {
             let fn = Function(name, 0) { _, args, _ in
@@ -185,7 +185,7 @@ public final class Runtime {
     }
 
     /// String makes a JavaScript string value.
-    public func StringValue(_ s: string) -> object.Value {
+    public func StringValue(s: string) -> object.Value {
         return .string(str.JSString.From(s))
     }
 }
